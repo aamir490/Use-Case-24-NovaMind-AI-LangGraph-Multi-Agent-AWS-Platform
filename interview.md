@@ -338,3 +338,165 @@ A: Check CloudWatch log group, secret ARN, Redis security group, and image pull 
 **Rate limits (per user / minute):** chat 20 · others 5
 
 **Graph edge:** `search → chat` only multi-node chain
+
+---
+
+## Stability AI — Image Generation (updated)
+
+### What changed and why
+
+Originally the vision agent used **Amazon Nova Canvas** via Bedrock. After deployment it returned a `LEGACY` model error — Nova Canvas was retired and marked inaccessible for accounts that hadn't used it in 30 days. It was replaced with the **Stability AI REST API** (`stable-image/generate/core` endpoint).
+
+**Q: Why Stability AI over Bedrock for image generation?**  
+A: Nova Canvas was the only text-to-image model available on Bedrock in `us-east-1` and it became legacy. Stability AI's direct API is actively maintained, has a free tier (25 credits), and the integration is a simple `fetch` call — no SDK dependency change needed.
+
+**Q: How does the vision agent work now?**  
+A:
+1. Groq refines the user's raw prompt into a detailed cinematic image prompt.
+2. A `fetch` POST to `https://api.stability.ai/v2beta/stable-image/generate/core` with `Authorization: Bearer` header.
+3. Response is raw binary PNG data (`Accept: image/*`).
+4. Buffer uploaded to S3 via `PutObjectCommand`.
+5. `GetObjectCommand` presigned URL returned to user (expires 24 hours).
+
+**Q: How is the API key handled in production?**  
+A: Stored in AWS Secrets Manager as `novamind/agent/stability-api-key`, injected as `STABILITY_API_KEY` env var into the ECS agent task at startup. Never hardcoded.
+
+**Q: What happens if Stability AI is down?**  
+A: The `fetch` throws or returns a non-200 status; the agent catches it and returns a friendly error string as `aiResponse` — same error boundary pattern as all other agents.
+
+---
+
+## GitHub Actions CI/CD — Deep Dive
+
+### Setup steps completed
+
+1. Installed GitHub CLI: `winget install --id GitHub.cli`
+2. Authenticated: `gh auth login` → browser OAuth → logged in as `aamir490`
+3. Fixed `deploy.yml` to pass `VITE_*` env vars to the frontend build step
+4. Created all 16 GitHub Secrets via `gh secret set` CLI
+
+### 16 secrets and their purpose
+
+| Secret | Purpose |
+|--------|---------|
+| `AWS_REGION` | Region for all AWS CLI commands |
+| `AWS_ACCOUNT_ID` | ECR image tagging (`{account}.dkr.ecr...`) |
+| `AWS_ACCESS_KEY` | mlops-user credentials for ECR login |
+| `AWS_SECRET_ACCESS_KEY` | mlops-user credentials for ECR login |
+| `ECS_CLUSTER` | `novamind-cluster` — target cluster for deployments |
+| `GATEWAY_SERVICE` | ECS service name for gateway |
+| `AUTH_SERVICE` | ECS service name for auth |
+| `CHAT_SERVICE` | ECS service name for chat |
+| `AGENT_SERVICE` | ECS service name for agent |
+| `BILLING_SERVICE` | ECS service name for billing |
+| `S3_BUCKET` | `novamind-frontend-prod` — frontend sync target |
+| `CLOUDFRONT_DISTRIBUTION_ID` | `EBG0WA07U0GG8` — cache invalidation target |
+| `VITE_FIREBASE_API_KEY` | Baked into frontend JS bundle at build time |
+| `VITE_RAZORPAY_KEY_ID` | Baked into frontend JS bundle at build time |
+| `VITE_SERVER_URL` | API base URL baked into frontend at build time |
+| `VITE_ADMIN_EMAIL` | Admin email baked into frontend at build time |
+
+### Common CI/CD interview questions
+
+**Q: Why are VITE_* variables GitHub Secrets and not env vars in the container?**  
+A: Vite bakes them into the JS bundle at `npm run build` time — they are not runtime env vars. The build runs inside GitHub Actions, so they must be available as environment variables on the Actions runner, not in the Docker container.
+
+**Q: What happens if you change VITE_SERVER_URL?**  
+A: You must push to `main` to trigger a rebuild. The old JS bundles in CloudFront must also be invalidated — the pipeline does this automatically with `aws cloudfront create-invalidation --paths "/*"`.
+
+**Q: Why `--force-new-deployment` on ECS?**  
+A: All images are tagged `:latest`. ECS won't pull a new image unless forced — it caches the previous digest. Force deployment triggers a rolling replacement: new task starts, old task drains, health check passes, then old task stops.
+
+**Q: How long does the full pipeline take?**  
+A: ~8–12 minutes total. Docker builds (5 images in parallel): ~3–4 min. ECR pushes: ~2–3 min. ECS redeployments: ~2–3 min. Frontend build + S3 sync + CloudFront invalidation: ~1–2 min.
+
+**Q: What if one ECS service deployment fails?**  
+A: The `aws ecs update-service` call itself rarely fails — it just queues the deployment. The real failure shows up as the new task not reaching `RUNNING` state in ECS. CloudWatch logs for that service show why (bad secret ARN, missing env var, crash on startup).
+
+**Q: How would you add rollback?**  
+A: Tag images with the git SHA (`git rev-parse --short HEAD`) in addition to `:latest`. On failure, re-run `ecs update-service` pointing to the previous SHA tag. Currently not implemented — relies on `:latest` only.
+
+---
+
+## System Design — Extended Questions
+
+**Q: How would you add streaming (SSE) to the agent responses?**  
+A: Replace the synchronous `graph.invoke()` with `graph.stream()` in LangGraph. The agent route handler writes chunked SSE events. Gateway must not buffer — set `X-Accel-Buffering: no`. ALB idle timeout must be extended (default 60s). Frontend uses `EventSource` or `fetch` with `ReadableStream`. Session and credit deduction stay at the end of stream.
+
+**Q: How would you handle concurrent users hitting the same conversation?**  
+A: Currently no locking — two parallel requests to the same `conversationId` could both read the same last-20 messages from Redis and write duplicate responses. Fix: Redis distributed lock on `conversationId` for the duration of graph execution, or optimistic concurrency in MongoDB messages.
+
+**Q: How would you make PDF RAG production-grade?**  
+A: 
+- Move embedding + Qdrant insert to a background job queue (BullMQ + Redis).
+- Store collection name in MongoDB against the conversation.
+- Add cleanup job to delete Qdrant collections older than N days.
+- Add chunk count limit for very large PDFs.
+- Cache embeddings for the same PDF hash.
+
+**Q: How would you scale the agent service under high load?**  
+A: ECS service auto-scaling on CPU/memory. Agent is stateless (Redis + Mongo are external). Rate limits per user already in Redis. Bottleneck is LLM API latency — add a request queue with BullMQ, set concurrency limit per LLM provider, and return a job ID to the client for polling.
+
+**Q: What database would you use if MongoDB becomes a bottleneck?**  
+A: For user sessions and credits — Redis already handles it. For conversation history — MongoDB works well for document-style messages. For analytics/reporting — push events to a time-series store (DynamoDB or ClickHouse). No change needed at current scale.
+
+**Q: How would you add multi-tenancy (organizations)?**  
+A: Add `orgId` to User model. Credit pools at org level in auth service. Conversations scoped to `orgId`. Admin APIs filtered by org. Rate limits keyed by `orgId` instead of `userId` for shared pools.
+
+---
+
+## Behavioral / HR Questions
+
+**Q: Walk me through the biggest technical challenge you faced.**  
+A: The S3 `PermanentRedirect` error in production. The bucket `cretexainovamind` is in `us-east-1` but the agent task definition had `AWS_REGION=ap-south-1` hardcoded — so the S3 client was hitting the wrong regional endpoint. Locally it worked because `.env` had the right region. I debugged it by checking `aws s3api get-bucket-location` which returned `null` (AWS's way of saying `us-east-1`), traced the env var through the task definition, and fixed it by correcting the region and redeploying via ECS.
+
+**Q: How did you decide on the microservice boundaries?**  
+A: I separated by domain ownership and failure isolation. Auth owns identity, sessions, credits — high security sensitivity. Chat owns conversation persistence — pure CRUD. Agent owns all AI logic and third-party integrations — most likely to change and fail. Billing owns payment flows — compliance boundary. Gateway owns the public interface — single CORS/cookie domain.
+
+**Q: What would you do differently if you started over?**  
+A: Add a message queue (BullMQ) from day one for agent jobs so long-running tasks don't block HTTP. Add conversation ownership checks to the chat service. Use infrastructure-as-code (CDK or Terraform) instead of a manual deploy guide. Set up basic integration tests before deployment.
+
+**Q: How do you keep up with AI tooling changes?**  
+A: The Nova Canvas retirement is a real example — AWS deprecated it without much warning. I monitor provider changelogs, pin SDK versions in `package.json`, and design provider integrations behind a thin abstraction so swapping (Nova Canvas → Stability AI) is a single file change.
+
+**Q: Describe a time you made a mistake and fixed it.**  
+A: Committed real API keys inside `deploy-guide-aws.md` and tried to push to GitHub. GitHub's secret scanning blocked the push. I used `git reset --soft` to squash all commits containing the file into one clean commit without the secrets, then gitignored the file going forward. Lesson: sensitive documentation should be gitignored from the start.
+
+---
+
+## One-liner answers (quick fire round)
+
+| Question | Answer |
+|----------|--------|
+| What is LangGraph? | A library for building stateful, graph-based AI workflows with nodes and edges |
+| What is a StateGraph? | A directed graph where each node reads and writes a shared state object |
+| What is Cloud Map? | AWS service discovery — gives containers stable DNS names inside a VPC |
+| What is a presigned URL? | A time-limited S3 URL that grants temporary GET/PUT access without AWS credentials |
+| What is ElastiCache? | AWS managed Redis — replaces Docker Redis in production |
+| What is ECS Fargate? | Serverless container runtime — run Docker containers without managing EC2 |
+| What is ECR? | AWS private Docker image registry |
+| What is Secrets Manager? | AWS service to store and inject sensitive env vars securely |
+| What is a task definition? | ECS blueprint: image, CPU, memory, env vars, secrets, IAM roles, log config |
+| What is `force-new-deployment`? | Tells ECS to pull the latest image even if the tag hasn't changed |
+| What is `SameSite=None`? | Cookie policy allowing cross-site requests — required when frontend and API are on different domains |
+| What is RAG? | Retrieval-Augmented Generation — answer questions using retrieved document chunks as context |
+| What is Qdrant? | Vector database for storing and searching embeddings |
+| What is a vector embedding? | A numerical representation of text that captures semantic meaning |
+| What is Tavily? | A search API optimised for LLM-friendly results |
+
+---
+
+## Architecture decisions — one-line justifications
+
+| Decision | Justification |
+|----------|--------------|
+| HTTP-only session cookie | Prevents XSS token theft vs localStorage JWT |
+| Gateway injects `x-user-id` | Downstream services stay simple; no repeated token parsing |
+| LangGraph over plain switch | Explicit state machine; clean `search→chat` composition; extensible |
+| Groq for router | Fast inference; cheap; prompt-based routing handles natural language |
+| Gemini for embeddings | Best quality embeddings for RAG; same provider as image analysis |
+| DeepSeek for coding | Specialised code model; cost-effective via OpenRouter |
+| Stability AI for images | Only active text-to-image API available after Nova Canvas retired |
+| Per-upload Qdrant collection | Simplest isolation; no cross-user data leak risk |
+| `:latest` ECR tag | Simple for a portfolio project; production should use SHA tags |
+| 7-day Redis session | Balance between UX (infrequent re-login) and security |
