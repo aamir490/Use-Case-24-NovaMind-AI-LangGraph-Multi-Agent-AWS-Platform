@@ -1,11 +1,8 @@
 import { getModel } from "../config/llmModels.js"
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime"
 import { uploadToS3 } from "../utils/uploadToS3.js"
 import { getFromS3 } from "../utils/getFromS3.js"
 import { deductCredits } from "../utils/deductCredits.js"
 import { checkAgentLimit } from "../config/agentLimit.js"
-
-const bedrockClient = new BedrockRuntimeClient({ region: "us-east-1" })
 
 export const visionAgent = async (state) => {
     try {
@@ -33,37 +30,32 @@ ${state.prompt}
 
         const prompt = res.content.trim()
 
-        // Step 2 — generate image using Amazon Nova Canvas via Bedrock
-        const bedrockPayload = {
-            taskType: "TEXT_IMAGE",
-            textToImageParams: {
-                text: prompt
-            },
-            imageGenerationConfig: {
-                numberOfImages: 1,
-                height: 1024,
-                width: 1024,
-                quality: "standard",
-                cfgScale: 8.0
+        // Step 2 — generate image using Stability AI REST API
+        const formData = new FormData()
+        formData.append("prompt", prompt)
+        formData.append("output_format", "png")
+        formData.append("width", "1024")
+        formData.append("height", "1024")
+
+        const stabilityResponse = await fetch(
+            "https://api.stability.ai/v2beta/stable-image/generate/core",
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${process.env.STABILITY_API_KEY}`,
+                    Accept: "image/*"
+                },
+                body: formData
             }
+        )
+
+        if (!stabilityResponse.ok) {
+            const errText = await stabilityResponse.text()
+            throw new Error(`Stability AI error: ${stabilityResponse.status} — ${errText}`)
         }
 
-        const command = new InvokeModelCommand({
-            modelId: "amazon.nova-canvas-v1:0",
-            contentType: "application/json",
-            accept: "application/json",
-            body: JSON.stringify(bedrockPayload)
-        })
-
-        const bedrockResponse = await bedrockClient.send(command)
-        const responseBody = JSON.parse(Buffer.from(bedrockResponse.body).toString("utf8"))
-
-        if (!responseBody.images || responseBody.images.length === 0) {
-            throw new Error("No image returned from Nova Canvas")
-        }
-
-        // Step 3 — decode base64 image and upload to S3
-        const imageBuffer = Buffer.from(responseBody.images[0], "base64")
+        const imageBuffer = Buffer.from(await stabilityResponse.arrayBuffer())
+        // Step 3 — upload to S3
         const filename = `image-${Date.now()}.png`
 
         await uploadToS3(filename, imageBuffer, "image/png")
