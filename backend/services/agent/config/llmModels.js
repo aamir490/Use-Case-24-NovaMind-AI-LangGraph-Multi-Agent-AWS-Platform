@@ -8,7 +8,7 @@ const groq=new ChatGroq({
 })
 
 const gemini=new ChatGoogleGenerativeAI({
-    model:"gemini-2.5-flash"
+    model:"gemini-2.0-flash"
 })
 
 const openrouter=new ChatOpenRouter({
@@ -27,7 +27,9 @@ export const getModel=async (agent)=>{
         case "coding": 
            return openrouter; 
         case "imageAnalyzer": 
-           return gemini;   
+           return gemini;
+        case "image":
+           return groq;
     
         default:
             return groq;

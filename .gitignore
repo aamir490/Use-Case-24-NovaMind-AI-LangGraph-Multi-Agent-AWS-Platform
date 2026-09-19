@@ -88,3 +88,6 @@ backend/services/agent/temp/
 # Personal notes with secrets
 notes_new.txt
 *.txt
+
+# Deploy guide (contains secrets, kept local only)
+deploy-guide-aws.md

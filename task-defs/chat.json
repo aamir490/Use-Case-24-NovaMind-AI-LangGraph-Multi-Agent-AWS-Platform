@@ -1,0 +1,36 @@
+{
+  "family": "novamind-chat",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::637423369471:role/novamindECSTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "chat",
+      "image": "637423369471.dkr.ecr.us-east-1.amazonaws.com/chat-service:latest",
+      "portMappings": [
+        { "containerPort": 8002, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "PORT",     "value": "8002" },
+        { "name": "NODE_ENV", "value": "production" }
+      ],
+      "secrets": [
+        {
+          "name": "MONGODB_URI",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/chat/mongodb-uri-JotThY"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/novamind-chat",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "chat"
+        }
+      },
+      "essential": true
+    }
+  ]
+}

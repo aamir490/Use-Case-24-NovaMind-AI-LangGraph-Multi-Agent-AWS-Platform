@@ -1,0 +1,36 @@
+{
+  "family": "novamind-gateway",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::637423369471:role/novamindECSTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "gateway",
+      "image": "637423369471.dkr.ecr.us-east-1.amazonaws.com/gateway:latest",
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "PORT",             "value": "8000" },
+        { "name": "NODE_ENV",         "value": "production" },
+        { "name": "FRONTEND_URL",     "value": "https://d8au5xi32kvkz.cloudfront.net" },
+        { "name": "REDIS_URL",        "value": "redis://novamind-redis.7tlv0b.0001.use1.cache.amazonaws.com:6379" },
+        { "name": "AUTH_SERVICE",     "value": "http://novamind-auth.novamind.local:8001" },
+        { "name": "CHAT_SERVICE",     "value": "http://novamind-chat.novamind.local:8002" },
+        { "name": "AGENT_SERVICE",    "value": "http://novamind-agent.novamind.local:8003" },
+        { "name": "BILLING_SERVICE",  "value": "http://novamind-billing.novamind.local:8004" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/novamind-gateway",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "gateway"
+        }
+      },
+      "essential": true
+    }
+  ]
+}

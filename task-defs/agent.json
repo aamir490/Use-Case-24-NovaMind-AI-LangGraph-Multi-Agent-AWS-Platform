@@ -1,0 +1,63 @@
+{
+  "family": "novamind-agent",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::637423369471:role/novamindECSTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::637423369471:role/novamindAgentTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "agent",
+      "image": "637423369471.dkr.ecr.us-east-1.amazonaws.com/agent-service:latest",
+      "portMappings": [
+        { "containerPort": 8003, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "PORT",             "value": "8003" },
+        { "name": "NODE_ENV",         "value": "production" },
+        { "name": "REDIS_URL",        "value": "redis://novamind-redis.7tlv0b.0001.use1.cache.amazonaws.com:6379" },
+        { "name": "AUTH_SERVICE",     "value": "http://novamind-auth.novamind.local:8001" },
+        { "name": "CHAT_SERVICE",     "value": "http://novamind-chat.novamind.local:8002" },
+        { "name": "AWS_REGION",       "value": "ap-south-1" },
+        { "name": "AWS_BUCKET_NAME",  "value": "cretexainovamind" },
+        { "name": "QDRANT_URL",       "value": "https://f60929db-7749-4dec-802c-170b249f394e.eu-west-1-0.aws.cloud.qdrant.io" }
+      ],
+      "secrets": [
+        {
+          "name": "MONGODB_URI",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/mongodb-uri-niJcVQ"
+        },
+        {
+          "name": "GROQ_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/groq-api-key-j6GtwS"
+        },
+        {
+          "name": "GOOGLE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/google-api-key-J7Z9PB"
+        },
+        {
+          "name": "OPENROUTER_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/openrouter-api-key-jkrbmM"
+        },
+        {
+          "name": "TAVILY_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/tavily-api-key-MFBuWs"
+        },
+        {
+          "name": "QDRANT_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/qdrant-api-key-xskeqw"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/novamind-agent",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "agent"
+        }
+      },
+      "essential": true
+    }
+  ]
+}

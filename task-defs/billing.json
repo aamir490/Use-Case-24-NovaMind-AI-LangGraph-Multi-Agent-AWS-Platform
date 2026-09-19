@@ -1,0 +1,42 @@
+{
+  "family": "novamind-billing",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::637423369471:role/novamindECSTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "billing",
+      "image": "637423369471.dkr.ecr.us-east-1.amazonaws.com/billing-service:latest",
+      "portMappings": [
+        { "containerPort": 8004, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "PORT",             "value": "8004" },
+        { "name": "NODE_ENV",         "value": "production" },
+        { "name": "RAZORPAY_KEY_ID",  "value": "rzp_test_Tce3KzaAQlK513" },
+        { "name": "AUTH_SERVICE",     "value": "http://novamind-auth.novamind.local:8001" }
+      ],
+      "secrets": [
+        {
+          "name": "MONGODB_URI",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/billing/mongodb-uri-Mzbh5M"
+        },
+        {
+          "name": "RAZORPAY_KEY_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/billing/razorpay-secret-ozvi5T"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/novamind-billing",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "billing"
+        }
+      },
+      "essential": true
+    }
+  ]
+}
