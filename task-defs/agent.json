@@ -19,7 +19,7 @@
         { "name": "REDIS_URL",        "value": "redis://novamind-redis.7tlv0b.0001.use1.cache.amazonaws.com:6379" },
         { "name": "AUTH_SERVICE",     "value": "http://novamind-auth.novamind.local:8001" },
         { "name": "CHAT_SERVICE",     "value": "http://novamind-chat.novamind.local:8002" },
-        { "name": "AWS_REGION",       "value": "ap-south-1" },
+        { "name": "AWS_REGION",       "value": "us-east-1" },
         { "name": "AWS_BUCKET_NAME",  "value": "cretexainovamind" },
         { "name": "QDRANT_URL",       "value": "https://f60929db-7749-4dec-802c-170b249f394e.eu-west-1-0.aws.cloud.qdrant.io" }
       ],
@@ -47,6 +47,10 @@
         {
           "name": "QDRANT_API_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/qdrant-api-key-xskeqw"
+        },
+        {
+          "name": "STABILITY_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:637423369471:secret:novamind/agent/stability-api-key-0NbEDm"
         }
       ],
       "logConfiguration": {
