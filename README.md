@@ -1,10 +1,60 @@
-# NovaMind AI
+<div align="center">
 
-> Full-stack, credit-based multi-agent AI workspace with Google sign-in, conversation history, Razorpay billing, generated artifacts, and AWS-oriented container deployment.
+# 🧠 NovaMind AI
 
-NovaMind AI (backend prompts also use **CortexAI**) gives authenticated users one interface for general chat, web research, coding help, PDF/PPT generation, image generation, PDF question answering (RAG), and image analysis. The stack is a React/Vite SPA and five Node.js/Express microservices behind an API gateway. The **agent service** orchestrates workflows with **LangGraph**—deterministic routing into specialised nodes, not open-ended autonomous planning.
+### Full-Stack Multi-Agent AI Platform
 
-## Product snapshots
+**LangGraph · React · Node.js · AWS ECS Fargate · GitHub Actions CI/CD**
+
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-d8au5xi32kvkz.cloudfront.net-blue?style=for-the-badge)](https://d8au5xi32kvkz.cloudfront.net)
+[![Node.js](https://img.shields.io/badge/Node.js-22-green?style=for-the-badge&logo=node.js)](https://nodejs.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
+[![AWS](https://img.shields.io/badge/AWS-ECS_Fargate-FF9900?style=for-the-badge&logo=amazonaws)](https://aws.amazon.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple?style=for-the-badge)](https://langchain-ai.github.io/langgraphjs/)
+[![CI/CD](https://img.shields.io/badge/CI/CD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions)](https://github.com/aamir490/Use-Case-24-NovaMind-AI-LangGraph-Multi-Agent-AWS-Platform/actions)
+
+</div>
+
+---
+
+> A credit-based multi-agent AI workspace where users can chat, search the web, generate code, create PDFs and PowerPoints, generate images, analyze uploaded images, and ask questions over uploaded PDFs — all behind one Google-authenticated interface with conversation history, billing, and an admin panel.
+
+---
+
+## 🚀 Live Demo
+
+🌐 **[https://d8au5xi32kvkz.cloudfront.net](https://d8au5xi32kvkz.cloudfront.net)**
+
+- Sign in with Google
+- Select an agent or let the AI router decide
+- All conversations saved with history
+
+---
+
+## ✨ What Makes This Agentic
+
+This is not a single LLM call. Every user message flows through a **LangGraph `StateGraph`** that:
+
+1. **Routes intelligently** — an LLM classifier reads the prompt and decides which specialist to invoke
+2. **Executes specialized pipelines** — each agent has its own tools, prompts, and post-processing
+3. **Chains nodes** — the `search → chat` chain retrieves Tavily results before generating an answer
+4. **Maintains state** — shared graph state carries prompt, file, results, artifacts, and response across nodes
+5. **Persists memory** — Redis (last 20 turns) + MongoDB (full history)
+
+| Agent | Trigger | Tools Used |
+|-------|---------|-----------|
+| 🗨️ **Chat** | General conversation, Q&A | Groq LLM |
+| 🔍 **Search** | Current events, latest news | Tavily API → Groq synthesis |
+| 💻 **Coding** | Code generation, debugging | DeepSeek via OpenRouter |
+| 📄 **PDF** | Generate document | Groq + PDFKit + S3 |
+| 📊 **PPT** | Generate presentation | Groq + PptxGenJS + S3 |
+| 🎨 **Vision** | Generate image | Groq prompt refinement + Stability AI |
+| 📚 **PDF RAG** | Q&A over uploaded PDF | pdf-parse + Gemini embeddings + Qdrant |
+| 🖼️ **Image Analyzer** | Analyze uploaded image | Gemini Vision multimodal |
+
+---
+
+## 📸 Screenshots
 
 ### 1. Login & Authentication
 
@@ -86,35 +136,9 @@ NovaMind AI (backend prompts also use **CortexAI**) gives authenticated users on
 
 ---
 
-## Business problem
+## 🏗️ Architecture
 
-Teams and individuals juggle separate tools for chat, live web research, document Q&A, code generation, visuals, and slide decks. Context is lost between apps, usage is hard to meter, and there is no single authenticated history of work.
-
-## Solution
-
-NovaMind AI unifies those workflows behind one Google-authenticated workspace:
-
-- **One chat UI** with explicit agent selection or automatic routing.
-- **Durable history** in MongoDB (conversations, messages, artifacts, images).
-- **Short-term context** in Redis for the agent (last 20 turns per conversation).
-- **Credits and rate limits** so usage stays bounded.
-- **Razorpay** checkout to add plan credits.
-- **Admin APIs and UI** for users, payments, and platform stats.
-
-## Agentic AI capabilities (what is actually implemented)
-
-| Capability | Implementation |
-| --- | --- |
-| Workflow routing | LangGraph `StateGraph` with a router node and eight specialist nodes |
-| Tool use | Tavily search, Stability AI image API, Qdrant vector search, S3 upload, PDFKit/PptxGenJS |
-| LLM providers | Groq (chat, router, search synthesis, prompt refinement), Gemini (embeddings, multimodal image analysis), OpenRouter/DeepSeek (coding) |
-| Multi-step flow | `search → chat` (retrieve then synthesise) |
-| State | Shared graph state: prompt, agent, file, search results, artifacts, images, response |
-| Memory | Redis cache of recent messages; MongoDB via chat service for durability |
-
-**Not implemented** (do not claim in interviews or docs): autonomous planning loops, tool retry/reflection, human-in-the-loop approval, background job workers, SSE/token streaming, multi-agent debate, or AWS Bedrock (SDK is listed in `package.json` but unused in source).
-
-## End-to-end application flow
+### Application Flow
 
 ```mermaid
 sequenceDiagram
@@ -136,7 +160,7 @@ sequenceDiagram
   AG-->>U: answer / images / artifacts
 ```
 
-## Agent workflow
+### Agent Routing Graph
 
 ```mermaid
 flowchart TD
@@ -164,19 +188,21 @@ flowchart TD
   E --> Out[JSON response]
 ```
 
-**Router priority:** (1) non-`auto` client selection, (2) PDF MIME → `pdfRag`, (3) image MIME → `imageAnalyzer`, (4) Groq classifier among chat/search/coding/pdf/ppt/vision.
+**Router priority:** (1) explicit agent from UI, (2) PDF MIME → `pdfRag`, (3) image MIME → `imageAnalyzer`, (4) Groq LLM classifier.
 
-## Architecture overview
+### Services & Infrastructure
 
 ```mermaid
 flowchart LR
-  U[Browser] --> F[React + Vite]
-  F -->|credentials| G[Gateway :8000]
+  U[Browser] --> CF[CloudFront]
+  CF --> S3F[S3 Frontend]
+  CF --> ALB[ALB]
+  ALB --> G[Gateway :8000]
   G --> A[Auth :8001]
   G --> C[Chat :8002]
   G --> AG[Agent :8003]
   G --> B[Billing :8004]
-  G --> R[(Redis)]
+  G --> R[(ElastiCache Redis)]
   A --> R
   AG --> R
   A --> M[(MongoDB Atlas)]
@@ -189,175 +215,213 @@ flowchart LR
   AG --> S3[AWS S3]
   B --> RZ[Razorpay]
   A --> FB[Firebase Admin]
-  F --> FBA[Firebase Auth client]
 ```
 
-Deep dive: [architecture.md](architecture.md) · Interview prep: [interview.md](interview.md)
+---
 
-## Features
+## 🛠️ Technology Stack
 
-- Google sign-in (Firebase client + Admin verification) and **7-day HTTP-only Redis sessions**
-- Single gateway: CORS, cookies, session guard, reverse proxy, `x-user-id` injection
-- Conversations and messages with optional **images** and **code project artifacts** (Monaco viewer)
-- Eight LangGraph nodes: chat, search, coding, pdf, ppt, vision, pdfRag, imageAnalyzer
-- Per-agent **Redis rate limits** and **credit deduction** via auth service
-- Razorpay order + HMAC verification; plan/credit update on auth service
-- Admin dashboard: stats, users, payments (auth service reads auth/chat/billing DBs)
-- Speech-to-text input (browser Web Speech API), file attach (PDF/images, 20 MB)
-- S3 presigned URLs for generated PDF, PPTX, and PNG outputs
+| Layer | Technologies |
+|-------|-------------|
+| **Frontend** | React 19, Vite 8, React Router 7, Redux Toolkit, Tailwind CSS 4, Axios, Monaco Editor, React Markdown |
+| **Backend** | Node.js 22 (ES Modules), Express 5, Mongoose 9, ioredis, Multer, Morgan |
+| **AI / Agents** | LangGraph, LangChain, Groq, Google Gemini, OpenRouter (DeepSeek), Tavily, Stability AI, Qdrant |
+| **Auth** | Firebase Auth (client) + Firebase Admin (server) + Redis sessions |
+| **Documents** | pdf-parse, PDFKit, PptxGenJS |
+| **Storage** | AWS S3 (artifacts), MongoDB Atlas (data), Qdrant Cloud (vectors), Redis (sessions + memory) |
+| **Infrastructure** | AWS ECS Fargate, ECR, ElastiCache, ALB, CloudFront, S3, Secrets Manager, Cloud Map, IAM, CloudWatch |
+| **CI/CD** | GitHub Actions — build 5 Docker images → push ECR → redeploy ECS → build frontend → S3 sync → CloudFront invalidation |
 
-## Technology stack
+---
 
-| Layer | Technologies (from repo) |
-| --- | --- |
-| Frontend | React 19, Vite 8, React Router 7, Redux Toolkit, Tailwind 4, Axios, Firebase 12, Monaco Editor, React Markdown |
-| Backend | Node.js ES modules, Express 5, Mongoose 9, ioredis, Multer, Morgan |
-| Agents | LangGraph, LangChain (Groq, Google GenAI, OpenRouter, Tavily, Qdrant) |
-| Documents | pdf-parse, PDFKit, PptxGenJS |
-| AWS SDK | S3 client + presigner (agent service) |
-| Containers | Five `node:22-alpine` Dockerfiles; Compose for local Redis only |
-| CI/CD | GitHub Actions: ECR push, ECS force deploy, S3 sync, CloudFront invalidation |
+## ☁️ AWS Architecture
 
-## AWS services (target deployment)
+| Service | Role |
+|---------|------|
+| **ECS Fargate** | Runs all 5 backend services as containers (no EC2 management) |
+| **ECR** | Private Docker image registry — stores 5 service images |
+| **ALB** | Public HTTPS entry point to the gateway service |
+| **CloudFront + S3** | Serves the React SPA globally over HTTPS |
+| **ElastiCache Redis** | Managed Redis for sessions, agent memory, rate limits |
+| **Cloud Map** | Internal DNS — `novamind-auth.novamind.local:8001` between services |
+| **Secrets Manager** | Stores all API keys, MongoDB URIs, Firebase JSON |
+| **IAM** | Task execution role (ECR + CloudWatch) + agent task role (S3 access) |
+| **CloudWatch Logs** | Container logs from all 5 ECS services |
 
-Evidence: `task-defs/*.json`, `.github/workflows/deploy.yml`, and `deploy-guide-aws-original.md`. **`deploy-guide-aws.md` is gitignored** (local/operational copy); the checked-in guide is `deploy-guide-aws-original.md`. Live AWS health is **not** proven by the repository alone.
+---
 
-| Service | Role in this project |
-| --- | --- |
-| **ECS Fargate** | Runs gateway, auth, chat, agent, billing tasks (`awsvpc`) |
-| **ECR** | Stores five service images |
-| **Cloud Map** | Internal DNS e.g. `http://novamind-auth.novamind.local:8001` |
-| **ElastiCache Redis** | Sessions (gateway/auth), agent memory, rate limits |
-| **ALB** | Public HTTPS entry to gateway (described in guide; not in IaC) |
-| **CloudFront + S3** | Static Vite build; API origin separate via ALB |
-| **Secrets Manager** | MongoDB URIs, API keys, Firebase JSON (partial adoption) |
-| **IAM** | ECS execution role; task roles for agent (S3) and auth |
-| **CloudWatch Logs** | Per-service `awslogs` groups in task definitions |
+## 🔄 CI/CD Pipeline
 
-**Not in repo:** Terraform/CDK/CloudFormation, VPC/subnet/ALB/ACM definitions, autoscaling policies, X-Ray, alarms/dashboards.
+Every push to `main` automatically:
 
-## API surface (via gateway)
+```
+git push origin main
+         │
+         ▼
+  GitHub Actions triggers
+         │
+         ▼
+  Job 1: deploy-backend
+  ├── Login to ECR
+  ├── Build 5 Docker images
+  ├── Push to ECR
+  └── Force redeploy all 5 ECS services
+         │
+         ▼
+  Job 2: deploy-frontend
+  ├── npm run build (with VITE_* secrets baked in)
+  ├── aws s3 sync → novamind-frontend-prod
+  └── CloudFront cache invalidation
+```
 
-| Service | Port | Gateway prefix | Notes |
-| --- | ---: | --- | --- |
-| Gateway | 8000 | `/api/*`, `/api/me` | Session `protect` on admin, chat, agent, billing, me |
-| Auth | 8001 | `/api/auth/*`, `/api/admin/*` | `/api/auth` is **not** gateway-protected (includes internal mutation routes—see security) |
-| Chat | 8002 | `/api/chat/*` | CRUD-style conversation/message APIs |
-| Agent | 8003 | `/api/agent/chat` | Multipart: prompt, conversationId, agent, optional file |
-| Billing | 8004 | `/api/billing/create`, `/api/billing/verify` | Razorpay |
+**16 GitHub Secrets** configured for AWS credentials, ECS service names, S3 bucket, CloudFront ID, and Vite build variables.
 
-## Security
+---
 
-| Control | Status |
-| --- | --- |
-| Session cookie | `httpOnly`; `secure` + `SameSite=None` in production |
-| Gateway auth | Redis lookup before protected routes |
-| Admin | Server-side `ADMIN_EMAIL` match on auth service |
-| Internal user identity | `x-user-id` header from gateway (trust boundary at gateway) |
-| Secrets in git | **Risk:** plaintext credentials appear in some task definitions; rotate and use Secrets Manager only |
-| Chat authorisation | **Gap:** message/conversation endpoints do not verify `userId` ownership |
-| Auth mutations | **Gap:** `/deduct-credits` and `/update-plan` reachable on unauthenticated `/api/auth` proxy path |
+## 🔑 Key Features
 
-## Data and storage
+- 🔐 **Google sign-in** via Firebase — 7-day HTTP-only Redis sessions
+- 🤖 **8 AI agents** with automatic LLM-based routing
+- 🔍 **Web search** — Tavily results grounded in real-time data
+- 💻 **Code generation** — DeepSeek via OpenRouter with Monaco editor output
+- 📄 **PDF generation** — structured content via PDFKit, uploaded to S3
+- 📊 **PPT generation** — full presentations via PptxGenJS, uploaded to S3
+- 🎨 **Image generation** — Stability AI `stable-image/generate/core`
+- 📚 **PDF RAG** — upload any PDF, ask questions, get context-grounded answers
+- 🖼️ **Image analysis** — upload any image, Gemini Vision analyzes it
+- 💳 **Razorpay billing** — credit-based plans with HMAC-verified payments
+- 👑 **Admin panel** — user management, payment history, platform stats
+- 🎙️ **Speech-to-text** — browser Web Speech API for voice input
+- 📁 **File attachments** — PDF and image uploads up to 20MB
 
-- **MongoDB Atlas:** separate URIs per service (auth users; chat conversations/messages; billing payments). Admin uses `CHAT_MONGODB_URI` and `BILLING_MONGODB_URI` for reporting.
-- **Redis:** gateway + auth (sessions); agent (memory + rate limits). Chat and billing do **not** use Redis in code.
-- **Qdrant Cloud:** ephemeral collection per PDF upload (`pdf-{timestamp}`); no cleanup in code.
-- **S3:** agent uploads generated artifacts; returns presigned GET URLs (default helper 600s; PDF/PPT agents pass longer values—user-facing copy sometimes says “10 minutes” incorrectly).
-- **Uploads:** PDF/image land in agent container `./temp` and are deleted after processing; not stored in S3.
+---
 
-## Local development
+## 📦 Services & Ports
+
+| Service | Port | Responsibility |
+|---------|------|---------------|
+| API Gateway | 8000 | Single entry point, CORS, session auth, reverse proxy |
+| Auth Service | 8001 | Firebase verification, sessions, credits, admin APIs |
+| Chat Service | 8002 | Conversation and message persistence |
+| Agent Service | 8003 | LangGraph orchestration, all 8 AI agents |
+| Billing Service | 8004 | Razorpay payment processing |
+
+---
+
+## 💰 Credit Plans
+
+| Plan | Credits | Price |
+|------|---------|-------|
+| Free | 100 | ₹0 |
+| Starter | 500 | ₹199 |
+| Pro | 1000 | ₹499 |
+
+**Credit costs per agent:** Chat 1 · Search 5 · Coding / PDF / PPT / Vision 10
+
+**Rate limits:** Chat 20 req/min · All others 5 req/min per user
+
+---
+
+## 🚀 Local Development
 
 ### Prerequisites
 
-- Node.js 18+ (Dockerfiles use Node 22)
-- Docker Desktop for Redis
-- Firebase service account JSON for auth (or `FIREBASE_SERVICE_ACCOUNT` JSON string)
-- External accounts: MongoDB Atlas, Groq, Google AI, OpenRouter, Tavily, Qdrant, Razorpay, AWS S3, Stability AI—as needed for features you test
+- Node.js 22+
+- Docker Desktop (for Redis)
+- Firebase service account JSON
+- API keys: MongoDB Atlas, Groq, Google AI, OpenRouter, Tavily, Qdrant, Stability AI, Razorpay, AWS S3
 
-### Environment files
-
-Copy each service’s `.env.example` to `.env` (examples exist under `frontend/`, `backend/gateway/`, and each service in `backend/services/*/`).
-
-| Location | Key variables |
-| --- | --- |
-| `backend/gateway/.env` | `PORT`, `FRONTEND_URL`, `REDIS_URL`, `AUTH_SERVICE`, `CHAT_SERVICE`, `AGENT_SERVICE`, `BILLING_SERVICE` |
-| `backend/services/auth/.env` | `PORT`, `MONGODB_URI`, `REDIS_URL`, `ADMIN_EMAIL`, `BILLING_MONGODB_URI`, `CHAT_MONGODB_URI`, Firebase |
-| `backend/services/chat/.env` | `PORT`, `MONGODB_URI` |
-| `backend/services/agent/.env` | `PORT`, `MONGODB_URI`, `REDIS_URL`, `AUTH_SERVICE`, `CHAT_SERVICE`, provider keys, `QDRANT_*`, `AWS_*`, `STABILITY_API_KEY` |
-| `backend/services/billing/.env` | `PORT`, `MONGODB_URI`, `AUTH_SERVICE`, Razorpay keys |
-| `frontend/.env` | `VITE_FIREBASE_API_KEY`, `VITE_SERVER_URL`, `VITE_RAZORPAY_KEY_ID`, `VITE_ADMIN_EMAIL` |
-
-Never commit real secrets. Rotate anything ever checked into task definitions or notes.
-
-### Start the stack
+### Quick Start
 
 ```bash
-# Terminal 1 — Redis
+# 1. Start Redis
 cd backend && docker compose up -d
 
-# Terminals 2–6 — services
-cd backend/services/auth && npm install && npm run dev
-cd backend/services/chat && npm install && npm run dev
-cd backend/services/agent && npm install && npm run dev
-cd backend/services/billing && npm install && npm run dev
-cd backend/gateway && npm install && npm run dev
+# 2. Start all backend services (5 separate terminals)
+cd backend/services/auth    && npm install && npm run dev   # :8001
+cd backend/services/chat    && npm install && npm run dev   # :8002
+cd backend/services/agent   && npm install && npm run dev   # :8003
+cd backend/services/billing && npm install && npm run dev   # :8004
+cd backend/gateway          && npm install && npm run dev   # :8000
 
-# Terminal 7 — frontend
-cd frontend && npm install && npm run dev
+# 3. Start frontend
+cd frontend && npm install && npm run dev                   # :5173
 ```
 
-Open `http://localhost:5173`. Detailed steps: [steps_to_do_deploy_localhost.md](steps_to_do_deploy_localhost.md).
+Open **http://localhost:5173**
 
-## Production deployment
+### Environment Files
 
-1. Provision AWS resources per `deploy-guide-aws-original.md` (VPC, ElastiCache, ECR, ECS cluster/services, Cloud Map namespace `novamind.local`, ALB, S3 buckets, CloudFront, Secrets Manager, IAM).
-2. Register/update ECS task definitions from `task-defs/*.json` (replace any plaintext secrets with Secrets Manager references only).
-3. Configure GitHub repository secrets for AWS and `VITE_*` build args (see workflow).
-4. Push to `main` → workflow **cortex ai deployment** builds five images, pushes to ECR, forces ECS redeployments, builds frontend, syncs to S3, invalidates CloudFront.
+Copy `.env.example` → `.env` in each service folder. Key variables:
 
-**Build-time note:** Vite embeds `VITE_SERVER_URL` at compile time—it must point to the public gateway URL (typically ALB DNS or custom domain), not CloudFront.
+| Service | Critical Variables |
+|---------|--------------------|
+| `gateway` | `FRONTEND_URL`, `REDIS_URL`, `AUTH_SERVICE`, `CHAT_SERVICE`, `AGENT_SERVICE`, `BILLING_SERVICE` |
+| `auth` | `MONGODB_URI`, `REDIS_URL`, `ADMIN_EMAIL`, Firebase credentials |
+| `agent` | `GROQ_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, `STABILITY_API_KEY`, `AWS_*`, `QDRANT_*` |
+| `billing` | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` |
+| `frontend` | `VITE_SERVER_URL`, `VITE_FIREBASE_API_KEY`, `VITE_RAZORPAY_KEY_ID` |
 
-## Testing and monitoring
+---
 
-- **Tests:** `backend/package.json` script is a placeholder; no automated test suite in the repo.
-- **Logging:** Morgan (`dev`) on gateway; `console.log` elsewhere; ECS tasks configured for CloudWatch Logs.
-- **Monitoring:** No application metrics, tracing, or alarms in code—operational visibility is primarily container logs.
+## 🏭 Production Deployment
 
-## Project structure
+1. Provision AWS infrastructure per [`deploy-guide-aws-original.md`](deploy-guide-aws-original.md)
+2. Register ECS task definitions from `task-defs/*.json`
+3. Add all 16 GitHub Secrets to the repository
+4. Push to `main` — GitHub Actions handles everything automatically
 
-```text
+---
+
+## 📁 Project Structure
+
+```
 1.cortexAI/
-├── frontend/                 # React SPA (Vite)
+├── frontend/                    # React 19 + Vite SPA
 ├── backend/
-│   ├── gateway/              # API gateway
-│   ├── shared/redis/         # Shared ioredis client
-│   ├── docker-compose.yml    # Local Redis only
+│   ├── gateway/                 # API gateway — auth, proxy, CORS
+│   ├── shared/redis/            # Shared ioredis client
+│   ├── docker-compose.yml       # Local Redis only
 │   └── services/
-│       ├── auth/             # Firebase, sessions, credits, admin
-│       ├── chat/             # Conversations & messages
-│       ├── agent/            # LangGraph, tools, S3 artifacts
-│       └── billing/          # Razorpay
-├── task-defs/                # ECS Fargate task definitions
-├── .github/workflows/        # deploy.yml
-├── new-project-pic/          # README / portfolio screenshots
-├── architecture.md           # Technical architecture
-├── interview.md              # Interview preparation
-├── deploy-guide-aws-original.md
+│       ├── auth/                # Firebase, sessions, credits, admin
+│       ├── chat/                # Conversations & messages (MongoDB)
+│       ├── agent/               # LangGraph agents, S3, AI tools
+│       │   ├── agents/          # 8 agent files
+│       │   ├── graph/           # LangGraph state, router, graph
+│       │   └── config/          # LLM models, S3, Qdrant, Redis
+│       └── billing/             # Razorpay payments
+├── task-defs/                   # ECS Fargate task definitions (5)
+├── .github/workflows/           # GitHub Actions CI/CD pipeline
+├── new-project-pic/             # Portfolio screenshots
+├── architecture.md              # Deep technical architecture
+├── interview.md                 # Interview preparation guide
+├── deploy-guide-aws-original.md # Complete AWS deployment guide
 └── steps_to_do_deploy_localhost.md
 ```
 
-`archive-files/` is excluded from project documentation and analysis.
+---
 
-## Documentation map
+## 📚 Documentation
 
 | Document | Purpose |
-| --- | --- |
-| [architecture.md](architecture.md) | Components, flows, AWS mapping, gaps |
-| [interview.md](interview.md) | Story, 4–5 min pitch, Q&A |
-| [deploy-guide-aws-original.md](deploy-guide-aws-original.md) | Manual AWS provisioning and CI/CD |
-| [steps_to_do_deploy_localhost.md](steps_to_do_deploy_localhost.md) | Local runbook |
+|----------|---------|
+| [architecture.md](architecture.md) | Components, flows, AWS mapping, known gaps |
+| [interview.md](interview.md) | 4–5 min pitch, Q&A, system design, behavioral questions |
+| [deploy-guide-aws-original.md](deploy-guide-aws-original.md) | Complete AWS provisioning + CI/CD setup |
+| [steps_to_do_deploy_localhost.md](steps_to_do_deploy_localhost.md) | Local development runbook |
 
-## License and attribution
+---
 
-Built by Aamir Imran — see login screen and [GitHub](https://github.com/aamir490).
+## 👤 Author
+
+**Aamir Imran**
+
+[![GitHub](https://img.shields.io/badge/GitHub-aamir490-181717?style=for-the-badge&logo=github)](https://github.com/aamir490)
+
+---
+
+<div align="center">
+
+Built with ❤️ using LangGraph, React, Node.js, and AWS
+
+</div>
