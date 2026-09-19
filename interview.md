@@ -88,6 +88,21 @@ Use this as a script outline—not word-for-word documentation.
 
 ### Architecture
 
+### AWS Architecture Diagram
+
+![NovaMind AI AWS Architecture](new-project-pic/architecture.jpg)
+
+**Use this diagram in interviews to explain the system visually. Walk through each layer:**
+
+1. **Client Layer** — React SPA loaded from CloudFront/S3; Google sign-in via Firebase; API calls go to ALB via `VITE_SERVER_URL`
+2. **AWS Infrastructure** — VPC with public/private subnets; ALB terminates HTTPS and forwards to Express Gateway on ECS Fargate port 8000
+3. **Application Layer** — 5 ECS Fargate microservices communicating via Cloud Map DNS (`novamind.local`); Gateway injects `x-user-id` header
+4. **AI/Agent Layer** — LangGraph `StateGraph` routes to 8 specialist agents; each calls its own LLM/tool (Groq, Gemini, DeepSeek, Stability AI, Tavily, Qdrant)
+5. **Data Layer** — Redis (sessions + agent memory), S3 (generated PDFs/PPTs/images), MongoDB Atlas (users/conversations/payments), Qdrant (PDF RAG vectors)
+6. **Security** — Secrets Manager injects all API keys at ECS task startup; IAM task roles for S3 access; CloudWatch for container logs
+
+---
+
 **Q: Why microservices instead of a monolith?**  
 A: Identity, chat CRUD, AI orchestration, and payments have different scaling and failure profiles. The agent service pulls heavy dependencies (LangChain, PDF libs, S3). Isolating it limits blast radius and lets me redeploy AI changes without touching billing. Cost is operational complexity—Cloud Map URLs, five containers, shared Redis.
 
