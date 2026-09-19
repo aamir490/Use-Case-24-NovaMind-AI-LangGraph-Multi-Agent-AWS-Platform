@@ -515,3 +515,254 @@ A: Committed real API keys inside `deploy-guide-aws.md` and tried to push to Git
 | Per-upload Qdrant collection | Simplest isolation; no cross-user data leak risk |
 | `:latest` ECR tag | Simple for a portfolio project; production should use SHA tags |
 | 7-day Redis session | Balance between UX (infrequent re-login) and security |
+
+
+---
+
+## Complete Technology Reference — Interview Ready
+
+> **NovaMind CortexAI** — Built by Aamir · AWS Generative AI Engineer
+>
+> Every item below is verified from actual source files. Use these tables to answer "what did you use and why?" questions confidently.
+
+---
+
+### Full Technology Stack — Quick Reference
+
+| Layer | Technology | Version | Why This Choice |
+|-------|-----------|---------|----------------|
+| **Frontend framework** | React | 19.2.7 | Latest stable — concurrent rendering, hooks |
+| **Build tool** | Vite | 8.1.0 | Fastest dev server; tree-shaking for production |
+| **Routing** | React Router DOM | 7.18.4 | Client-side SPA routing |
+| **State management** | Redux Toolkit + react-redux | 2.12.0 + 9.3.0 | Predictable global state for user, conversations, messages |
+| **Styling** | Tailwind CSS | 4.3.1 | Utility-first — no CSS files needed |
+| **HTTP client** | Axios | 1.18.1 | `withCredentials: true` for cookie-based auth |
+| **Code editor** | Monaco Editor (`@monaco-editor/react`) | 4.7.0 | VS Code-quality editor for coding agent artifacts |
+| **Markdown** | react-markdown + remark-gfm + react-syntax-highlighter | 10.1.0 | Renders AI responses with tables, code blocks |
+| **Animations** | motion (Framer Motion) | 12.42.2 | Smooth UI transitions |
+| **Backend runtime** | Node.js (ESM) | 22 (alpine) | Modern ESM modules, lightweight alpine image |
+| **HTTP framework** | Express.js | 5.2.1 | Minimal, fast — all 5 services |
+| **MongoDB ODM** | Mongoose | 9.7.3–9.7.4 | Schema validation + query abstraction over MongoDB Atlas |
+| **Redis client** | ioredis | 5.11.1 | High-performance Redis client — sessions, memory, rate limits |
+| **Proxy** | express-http-proxy | 2.1.2 | Gateway reverse proxy with header injection |
+| **File uploads** | multer | 2.2.0 | Multipart handling — disk storage, 20 MB limit, MIME filtering |
+| **Agent orchestration** | LangGraph (`@langchain/langgraph`) | 1.4.7 | Stateful directed graph — explicit routing, not autonomous planning |
+| **LLM abstraction** | LangChain Core | 1.2.2 | Unified interface across Groq, Gemini, OpenRouter |
+| **Primary LLM** | Groq — `openai/gpt-oss-120b` | @langchain/groq 1.3.1 | Fast inference — chat, routing, PDF/PPT, search synthesis |
+| **Vision + embeddings** | Google Gemini — `gemini-2.0-flash` + `gemini-embedding-001` | @langchain/google-genai 2.2.0 | Multimodal image analysis + best-quality RAG embeddings |
+| **Coding LLM** | DeepSeek via OpenRouter — `deepseek/deepseek-chat` | @langchain/openrouter 0.4.3 | Specialised code model, temp: 0, deterministic output |
+| **Image generation** | Stability AI REST — `stable-image/generate/core` | v2beta | Only active text-to-image after Nova Canvas retired |
+| **Web search** | Tavily Search | @langchain/tavily 1.2.0 | LLM-optimised search, 5 results + images |
+| **Vector DB** | Qdrant Cloud | @langchain/qdrant 1.0.3 | Vector similarity search for PDF RAG |
+| **Text splitting** | RecursiveCharacterTextSplitter | @langchain/textsplitters 1.0.1 | 1000-char chunks, 200 overlap for PDF RAG |
+| **PDF parsing** | pdf-parse | 2.4.5 | Extract raw text from uploaded PDFs |
+| **PDF generation** | PDFKit | 0.19.1 | Programmatic PDF from AI-generated JSON structure |
+| **PPT generation** | PptxGenJS | 4.0.1 | Programmatic PPTX from AI-generated JSON slides |
+| **Auth (client)** | Firebase Auth SDK | 12.15.0 | Google Sign-In popup — returns ID token |
+| **Auth (server)** | Firebase Admin SDK | 13.10.0 | `verifyIdToken` — server-side token validation |
+| **Payments** | Razorpay SDK | 2.9.6 | INR orders + HMAC-SHA256 payment verification |
+| **Containerisation** | Docker — `node:22-alpine` | — | Lightweight, reproducible builds |
+| **CI/CD** | GitHub Actions | ubuntu-latest | Automated build → ECR push → ECS redeploy → S3 sync |
+
+---
+
+### AWS Services — Interview Table
+
+| AWS Service | What It Does in This Project | Interview Explanation |
+|-------------|-----------------------------|-----------------------|
+| **Amazon ECS Fargate** | Runs all 5 backend microservices as containers | "Serverless containers — I don't manage EC2. I define CPU/memory in task definitions and AWS handles the servers." |
+| **Amazon ECR** | Private Docker image registry (5 repos) | "Every push to main triggers a CI build that tags and pushes :latest to ECR. ECS pulls from there." |
+| **Amazon S3** | Two purposes: frontend hosting (`novamind-frontend-prod`) + artifact storage (`cretexainovamind`) | "React build files go to S3, served via CloudFront. Agent-generated PDFs/PPTs/images also go to S3 with presigned URLs." |
+| **Amazon CloudFront** | HTTPS CDN serving the React SPA globally | "CloudFront sits in front of S3. It adds HTTPS, global edge caching, and custom error pages for React Router." |
+| **ALB** | HTTPS termination + routing to gateway ECS service | "ALB is the only public entry point for the API. It terminates TLS and forwards HTTP to the gateway container." |
+| **Amazon ElastiCache for Redis** | Managed Redis — sessions, agent memory, rate limits | "I use Redis for three things: session validation on every request, last-20-message context for the agent, and per-user rate limiting." |
+| **AWS Secrets Manager** | Stores 12 secrets — all API keys, MongoDB URIs, Firebase JSON | "No secrets in Docker images or task def plaintext. Secrets Manager injects them as env vars when ECS starts the container." |
+| **AWS Cloud Map** | Internal DNS namespace `novamind.local` | "In ECS, container IPs change on every redeploy. Cloud Map gives each service a stable DNS name like `novamind-auth.novamind.local:8001`." |
+| **AWS IAM** | Three task roles with least-privilege permissions | "The agent task role only has S3 read/write on `cretexainovamind`. The execution role handles ECR pulls and CloudWatch logging." |
+| **Amazon CloudWatch Logs** | Container logs from all 5 ECS tasks | "Every service writes to `/ecs/novamind-<name>` via the awslogs driver. That's how I debug production issues." |
+| **Amazon VPC** | Network isolation — public subnets for ALB, private for ECS | "ECS tasks are in private subnets with no public IPs. Only the ALB is public. NAT Gateway handles outbound calls to Groq, MongoDB, etc." |
+| **NAT Gateway** | Outbound internet from private ECS tasks | "Private subnets can't reach the internet directly. NAT Gateway lets the agent call Groq, Gemini, Tavily, Qdrant, Stability AI." |
+
+---
+
+### External Services — Interview Table
+
+| Service | What It Does | How Integrated | Interview Explanation |
+|---------|-------------|---------------|-----------------------|
+| **MongoDB Atlas** | Persistent storage — users, conversations, messages, payments | Mongoose via `MONGODB_URI` connection string (Secrets Manager) | "External managed MongoDB. I use separate URIs per service for isolation. No AWS database needed." |
+| **Firebase Auth** | Google Sign-In | Client SDK (browser popup) + Admin SDK (server token verify) | "Firebase handles the OAuth complexity. The client gets an ID token, sends it to the auth service, which verifies it with Firebase Admin." |
+| **Groq API** | Primary LLM inference | `@langchain/groq` ChatGroq, model `openai/gpt-oss-120b` | "Groq is extremely fast and cheap. I use it for chat, routing classification, PDF/PPT generation, and search synthesis." |
+| **Google Gemini API** | Image analysis + embeddings | `@langchain/google-genai` ChatGoogleGenerativeAI + GoogleGenerativeAIEmbeddings | "Gemini 2.0 Flash handles multimodal image analysis. Same provider for embeddings — `gemini-embedding-001` for PDF RAG." |
+| **OpenRouter → DeepSeek** | Coding LLM | `@langchain/openrouter` ChatOpenRouter → `deepseek/deepseek-chat` | "DeepSeek is a specialised coding model. OpenRouter is the gateway — I can swap the underlying model without changing code." |
+| **Stability AI** | Text-to-image generation | Native `fetch` POST to `v2beta/stable-image/generate/core` | "I replaced AWS Nova Canvas (retired/legacy) with Stability AI. Direct REST API — no SDK needed, just `fetch` with Bearer token." |
+| **Tavily Search** | Real-time web search | `@langchain/tavily` TavilySearch tool | "Tavily is designed for LLM pipelines. It returns clean, structured results. I get 5 results + images and feed them into the chat node." |
+| **Qdrant Cloud** | Vector similarity search for PDF RAG | `@langchain/qdrant` QdrantVectorStore | "Managed vector database in eu-west-1. One collection per PDF upload. I query top-5 chunks by cosine similarity." |
+| **Razorpay** | Indian payment gateway | `razorpay` SDK — `orders.create()` + HMAC-SHA256 verify | "Razorpay is the standard for INR payments. I create an order server-side, client completes payment, then I verify the signature before crediting the account." |
+
+---
+
+### LLM Model Selection — Q&A
+
+**Q: Why Groq for most agents?**
+A: Speed and cost. Groq's hardware (LPUs) makes inference 3–10x faster than standard GPU inference. For a conversational product where users expect sub-2-second responses, this matters. `gpt-oss-120b` gives strong reasoning at low cost.
+
+**Q: Why Gemini for embeddings specifically?**
+A: Gemini `gemini-embedding-001` produces high-quality semantic embeddings and is available via the same Google API key already used for image analysis. Keeps the external service count low — one key, two capabilities.
+
+**Q: Why DeepSeek for coding?**
+A: DeepSeek is trained heavily on code. For code generation requests, a coding-specialised model outperforms a general-purpose model. OpenRouter provides the routing layer — if DeepSeek's quality drops, I can swap the model ID without touching the LangChain integration.
+
+**Q: Why not use one LLM for everything?**
+A: Different tasks have different cost/quality tradeoffs. Chat needs speed (Groq). Code needs precision (DeepSeek, temp=0). Image analysis needs multimodal support (Gemini). Embeddings need high-quality vector representations (Gemini). Using the right tool for each task is better engineering.
+
+**Q: Why Stability AI for images instead of DALL-E or Midjourney?**
+A: The original implementation used AWS Nova Canvas via Bedrock. AWS retired it as a legacy model. Stability AI's REST API is the simplest drop-in replacement — a single `fetch` call, no SDK change, free credits to start.
+
+---
+
+### Database Design Decisions — Q&A
+
+**Q: Why separate MongoDB databases per service?**
+A: Microservice isolation. If the chat database goes down, auth and billing keep working. It also enforces that services don't query each other's data directly — they must go through the other service's API.
+
+**Q: Why Redis AND MongoDB? Why not just MongoDB?**
+A: MongoDB is durable but slower for high-frequency reads. Redis is in-memory and handles three patterns that need sub-millisecond access: session validation on every API call, conversation context for every agent invocation, and rate limit counters that increment 20+ times per minute.
+
+**Q: Why one Qdrant collection per PDF upload?**
+A: Simplest isolation model. Each user's PDF is completely independent. No risk of one user's document context leaking into another's search results. The downside is collection sprawl with no cleanup — a known gap.
+
+**Q: What is the Redis key design?**
+A:
+- `session-<uuid>` — 7-day TTL, stores full user profile JSON, read by gateway on every protected request
+- `messages-<conversationId>` — 24-hour TTL, sliding window of last 20 messages, read by agent before every LLM call
+- `rate-<userId>-<agentType>` — 60-second TTL, integer counter incremented on each request, throws 429 when limit exceeded
+
+---
+
+### RAG Pipeline — Deep Dive Q&A
+
+**Q: Walk me through the full PDF RAG flow.**
+A:
+1. User attaches a PDF in the UI — multer saves it to `./temp/` on the agent container disk
+2. Router detects `application/pdf` MIME type → routes to `pdfRag` node (bypasses LLM classifier)
+3. `pdf-parse` extracts raw text from the PDF
+4. `RecursiveCharacterTextSplitter` splits text into 1000-char chunks with 200-char overlap (overlap preserves context across chunk boundaries)
+5. Each chunk is embedded using Google `gemini-embedding-001` → produces a dense vector
+6. Vectors + chunks stored in a new Qdrant collection named `pdf-{timestamp}`
+7. User's question is embedded the same way, then `similaritySearch(question, 5)` returns the top-5 most relevant chunks by cosine similarity
+8. Groq receives a system prompt: "Answer ONLY from the provided context" + the 5 chunks + the user's question
+9. Response returned to user. `finally` block deletes the temp file from disk.
+
+**Q: What are the limitations of this RAG implementation?**
+A:
+- No collection cleanup — Qdrant collections accumulate with no expiry or deletion
+- No chunk reuse — same PDF uploaded twice creates two separate collections
+- Synchronous processing in the HTTP request path — large PDFs will cause slow responses
+- No re-ranking — top-5 by cosine similarity only, no cross-encoder re-ranking
+- Context window not checked — very long documents could exceed Groq's context limit
+
+---
+
+### Security Architecture — Q&A
+
+**Q: How are secrets managed?**
+A: All 12 secrets (MongoDB URIs, API keys, Firebase JSON) are stored in AWS Secrets Manager under the `novamind/*` namespace. ECS injects them as environment variables at container startup using the `secrets` block in the task definition. No secrets are in Docker images, Dockerfiles, or plaintext task definition environment blocks.
+
+**Q: How does session authentication work?**
+A: Firebase returns an ID token after Google Sign-In. The auth service verifies it with Firebase Admin SDK, creates a UUID session ID, stores the user profile JSON in Redis with a 7-day TTL, and returns an HTTP-only cookie containing the session ID. Every subsequent request goes through the gateway's `protect` middleware which looks up `session-<id>` in Redis and attaches the user to `req.user`.
+
+**Q: Why HTTP-only cookies instead of localStorage JWTs?**
+A: HTTP-only cookies cannot be read by JavaScript, protecting against XSS attacks. A malicious script injected into the page cannot steal the session token. JWTs in localStorage are accessible to any script on the page.
+
+**Q: What is the x-user-id header pattern?**
+A: The gateway reads the user ID from the Redis session and injects it as an `x-user-id` header before proxying to downstream services. This means auth, chat, agent, and billing never parse cookies or validate sessions themselves — they just read the header. The gateway is the single trust boundary.
+
+**Q: What are the known security gaps?**
+A:
+1. `/api/auth/*` is proxied without the `protect` middleware — this means `/deduct-credits` and `/update-plan` are accessible to anyone who can reach the auth service URL
+2. Chat service doesn't verify that the `conversationId` belongs to the requesting user
+3. Some task definitions still have plaintext credentials that should be moved to Secrets Manager
+
+---
+
+### ECS / Fargate Architecture — Q&A
+
+**Q: How is the Fargate sizing determined?**
+A: Gateway, auth, chat, billing: 0.5 vCPU / 1 GB — lightweight CRUD and proxy workloads. Agent: 1 vCPU / 2 GB — handles heavy PDF parsing, base64 image encoding, multiple LLM calls, and in-memory vector operations.
+
+**Q: How does `--force-new-deployment` work?**
+A: ECS uses `:latest` image tags. Without force, ECS won't pull a new image if the tag name hasn't changed. `--force-new-deployment` tells ECS to pull the current digest of `:latest` from ECR and do a rolling replacement — start new task, drain old task, pass health check, terminate old task.
+
+**Q: What happens if an ECS task crashes?**
+A: ECS services have a `desiredCount: 1`. If the task crashes, ECS automatically starts a new one using the same task definition. The service maintains the desired count. CloudWatch logs capture the crash reason.
+
+**Q: How do services find each other in production?**
+A: AWS Cloud Map provides a private DNS namespace `novamind.local`. When each ECS service starts, it registers its task's private IP with Cloud Map. Other services resolve `novamind-auth.novamind.local:8001` and Cloud Map returns the current task IP. If the task restarts with a new IP, Cloud Map updates automatically within seconds.
+
+---
+
+### Full Dependency Versions — Quick Reference Card
+
+#### Agent Service (most complex — all AI dependencies)
+```
+@aws-sdk/client-bedrock-runtime  3.1136.0  (installed, not used)
+@aws-sdk/client-s3               ^3.1083.0
+@aws-sdk/s3-request-presigner    ^3.1083.0
+@google/generative-ai            ^0.24.1
+@langchain/core                  ^1.2.2
+@langchain/google-genai          ^2.2.0
+@langchain/groq                  ^1.3.1
+@langchain/langgraph             ^1.4.7
+@langchain/openrouter            ^0.4.3
+@langchain/qdrant                ^1.0.3
+@langchain/tavily                ^1.2.0
+@langchain/textsplitters         ^1.0.1
+axios                            ^1.18.1
+express                          ^5.2.1
+mongoose                         ^9.7.3
+multer                           ^2.2.0
+pdf-parse                        ^2.4.5
+pdfkit                           ^0.19.1
+pptxgenjs                        ^4.0.1
+```
+
+#### Auth Service
+```
+firebase-admin   ^13.10.0
+ioredis          ^5.11.1
+mongoose         ^9.7.3
+express          ^5.2.1
+```
+
+#### Gateway
+```
+cookie-parser        ^1.4.7
+cors                 ^2.8.6
+express              ^5.2.1
+express-http-proxy   ^2.1.2
+morgan               ^1.11.0
+ioredis              ^5.11.1  (shared)
+```
+
+#### Billing
+```
+razorpay   ^2.9.6
+mongoose   ^9.7.4
+express    ^5.2.1
+axios      ^1.18.1
+```
+
+#### Frontend
+```
+react                    ^19.2.7
+vite                     ^8.1.0
+redux-toolkit            ^2.12.0
+react-router-dom         ^7.18.4
+tailwindcss              ^4.3.1
+firebase                 ^12.15.0
+axios                    ^1.18.1
+@monaco-editor/react     ^4.7.0
+react-markdown           ^10.1.0
+react-syntax-highlighter ^16.1.1
+motion                   ^12.42.2
+```
