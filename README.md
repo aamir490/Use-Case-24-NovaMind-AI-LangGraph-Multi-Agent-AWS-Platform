@@ -6,13 +6,85 @@ NovaMind AI (backend prompts also use **CortexAI**) gives authenticated users on
 
 ## Product snapshots
 
-| Dashboard | Admin panel | PDF RAG |
-| --- | --- | --- |
-| ![Dashboard](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-6-new.png) | ![Admin](new-project-pic/NovaMind-Ai-MultiAgent-Platform-admin-panel-4-users.png) | ![RAG 1](new-project-pic/Novamind-ai-multiagent-platform-rag-capabiliti-1%20.png) |
+### 1. Login & Authentication
 
-| RAG (follow-up) | CI/CD (GitHub Actions) |
-| --- | --- |
-| ![RAG 2](new-project-pic/Novamind-ai-multiagent-platform-rag-capabiliti-2.png) | ![Deploy 1](new-project-pic/Novamind-ai-multiagent-github-action-1.png) · ![Deploy 2](new-project-pic/Novamind-ai-multiagent-github-action-2.png) · ![Deploy 3](new-project-pic/Novamind-ai-multiagent-github-action-3.png) |
+| Login Page | Google Authentication |
+|---|---|
+| ![Login Page](new-project-pic/NovaMind-Ai-MultiAgent-platform-loginpage-1.png) | ![Google Auth](new-project-pic/NovaMind-Ai-MultiAgent-platform-login-aunthentication-1.png) |
+
+---
+
+### 2. Dashboard & Chat Interface
+
+| Dashboard Overview | Chat — General AI |
+|---|---|
+| ![Dashboard 1](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-1.png) | ![Dashboard 2](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-2.png) |
+
+| Chat — Coding Agent | Chat — Search Agent |
+|---|---|
+| ![Dashboard 3](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-3.png) | ![Dashboard 4](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-4.png) |
+
+| Chat — Image Generation | Chat — PDF/PPT Generation |
+|---|---|
+| ![Dashboard 5](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-5.png) | ![Dashboard 6](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-6.png) |
+
+| Dashboard — Full View | Conversation History |
+|---|---|
+| ![Dashboard 6 New](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-6-new.png) | ![Dashboard 7](new-project-pic/NovaMind-Ai-MultiAgent-Platform-Dashboard-7.png) |
+
+---
+
+### 3. PDF RAG (Document Q&A)
+
+| Upload PDF & Ask Questions | Follow-up Questions |
+|---|---|
+| ![RAG 1](new-project-pic/Novamind-ai-multiagent-platform-rag-capabiliti-1%20.png) | ![RAG 2](new-project-pic/Novamind-ai-multiagent-platform-rag-capabiliti-2.png) |
+
+---
+
+### 4. Admin Panel
+
+| Admin Dashboard — Stats | Admin — Users Management |
+|---|---|
+| ![Admin 1](new-project-pic/NovaMind-Ai-MultiAgent-Platform-admin-panel-1.png) | ![Admin 2](new-project-pic/NovaMind-Ai-MultiAgent-Platform-admin-panel-2.png) |
+
+| Admin — Payments | Admin — All Users |
+|---|---|
+| ![Admin 3](new-project-pic/NovaMind-Ai-MultiAgent-Platform-admin-panel-3.png) | ![Admin 4](new-project-pic/NovaMind-Ai-MultiAgent-Platform-admin-panel-4-users.png) |
+
+| Admin — Full Overview |
+|---|
+| ![Admin Full](new-project-pic/screencapture-d8au5xi32kvkz-cloudfront-net-admin-2026-09-19-06_49_34.png) |
+
+---
+
+### 5. CI/CD — GitHub Actions Pipeline
+
+| Pipeline Triggered | Jobs Running | Deployment Complete |
+|---|---|---|
+| ![GitHub Actions 1](new-project-pic/Novamind-ai-multiagent-github-action-1.png) | ![GitHub Actions 2](new-project-pic/Novamind-ai-multiagent-github-action-2.png) | ![GitHub Actions 3](new-project-pic/Novamind-ai-multiagent-github-action-3.png) |
+
+---
+
+### 6. AWS Infrastructure
+
+| ECR — Container Registry | ECS — Fargate Services |
+|---|---|
+| ![ECR](new-project-pic/aws-ecr.png) | ![ECS](new-project-pic/aws-ecs.png) |
+
+| ElastiCache Redis | S3 Buckets |
+|---|---|
+| ![ElastiCache](new-project-pic/aws-elastic-cache.png) | ![S3](new-project-pic/aws-s3-bucket.png) |
+
+| CloudFront CDN | IAM Roles |
+|---|---|
+| ![CloudFront](new-project-pic/aws-cloudfront.png) | ![IAM](new-project-pic/aws-iam-role.png) |
+
+| CloudWatch Logs |
+|---|
+| ![CloudWatch](new-project-pic/aws-cloudwatch-logs.png) |
+
+---
 
 ## Business problem
 
