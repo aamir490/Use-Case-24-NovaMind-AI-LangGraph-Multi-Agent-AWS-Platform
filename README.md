@@ -31,6 +31,25 @@
 
 ---
 
+## 🏗️ Architecture
+
+### AWS Cloud Architecture Diagram
+
+![NovaMind AI AWS Architecture](new-project-pic/architecture.jpg)
+
+**What this diagram shows:**
+
+- **6 layers** — Client, AWS Infrastructure, Application/API, AI/Agent, Data & RAG, Security & Monitoring
+- **Client Layer** — React 19 + Vite SPA served via CloudFront CDN; Firebase Auth SDK for Google sign-in
+- **AWS Infrastructure** — VPC with public/private subnets; ALB for HTTPS termination; NAT Gateway for outbound API calls
+- **Application Layer** — 5 ECS Fargate microservices (Gateway :8000, Auth :8001, Chat :8002, Agent :8003, Billing :8004) connected via AWS Cloud Map internal DNS (`novamind.local`)
+- **AI/Agent Layer** — LangGraph `StateGraph` with a router node and 8 specialist nodes; Groq, Gemini, OpenRouter/DeepSeek, Stability AI, Tavily, Qdrant for inference and tools
+- **Data Layer** — ElastiCache Redis (sessions + agent memory), S3 (artifacts), MongoDB Atlas (external), Qdrant Cloud (vectors)
+- **Security & Monitoring** — Secrets Manager (API keys injected at ECS startup), IAM task roles, CloudWatch Logs, ECR (5 Docker images)
+- **CI/CD** — GitHub Actions on `main` push: build → ECR push → ECS force redeploy → S3 sync → CloudFront invalidation
+
+---
+
 ## ✨ What Makes This Agentic
 
 This is not a single LLM call. Every user message flows through a **LangGraph `StateGraph`** that:
@@ -136,22 +155,7 @@ This is not a single LLM call. Every user message flows through a **LangGraph `S
 
 ---
 
-## 🏗️ Architecture
-
-### AWS Cloud Architecture Diagram
-
-![NovaMind AI AWS Architecture](new-project-pic/architecture.jpg)
-
-**What this diagram shows:**
-
-- **6 layers** — Client, AWS Infrastructure, Application/API, AI/Agent, Data & RAG, Security & Monitoring
-- **Client Layer** — React 19 + Vite SPA served via CloudFront CDN; Firebase Auth SDK for Google sign-in
-- **AWS Infrastructure** — VPC with public/private subnets; ALB for HTTPS termination; NAT Gateway for outbound API calls
-- **Application Layer** — 5 ECS Fargate microservices (Gateway :8000, Auth :8001, Chat :8002, Agent :8003, Billing :8004) connected via AWS Cloud Map internal DNS (`novamind.local`)
-- **AI/Agent Layer** — LangGraph `StateGraph` with a router node and 8 specialist nodes; Groq, Gemini, OpenRouter/DeepSeek, Stability AI, Tavily, Qdrant for inference and tools
-- **Data Layer** — ElastiCache Redis (sessions + agent memory), S3 (artifacts), MongoDB Atlas (external), Qdrant Cloud (vectors)
-- **Security & Monitoring** — Secrets Manager (API keys injected at ECS startup), IAM task roles, CloudWatch Logs, ECR (5 Docker images)
-- **CI/CD** — GitHub Actions on `main` push: build → ECR push → ECS force redeploy → S3 sync → CloudFront invalidation
+## 🏗️ Architecture Details
 
 ### Application Flow
 
