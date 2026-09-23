@@ -44,6 +44,14 @@ To try the demo, sign in with Google, choose an agent or use automatic routing, 
 
 [View full-size architecture poster](new-project-pic/novamind-aws-architecture-poster.png)
 
+NovaMind AI separates the browser interface, backend services and AI workflows into distinct parts. Amazon S3 stores the compiled React frontend, and CloudFront delivers it to users. The browser sends API requests to the backend through an Application Load Balancer, which forwards them to the Express Gateway. The Gateway validates sessions for protected routes and directs each request to the appropriate service.
+
+The backend consists of **five services running on ECS Fargate**: Gateway, Auth, Chat, Agent and Billing. Each service has a focused responsibility, from verifying Firebase identity and saving conversations to processing payments. In the documented deployment, backend tasks run in private subnets, discover one another through AWS Cloud Map, and reach external providers through a NAT Gateway.
+
+The **Agent service is the AI processing layer**. Its LangGraph router selects one of eight specialist workflows using the chosen agent, uploaded file or prompt. Those workflows call external models and tools for tasks such as web search, code generation, image analysis and PDF retrieval. All eight agents run inside this service; they share orchestration code and return answers or generated artifacts through the same API.
+
+Storage is divided by purpose: **MongoDB Atlas** persists application data, **Redis** supports sessions and conversation memory, **Qdrant** stores PDF embeddings, and **S3** holds generated documents and images. IAM roles and Secrets Manager support permissions and runtime credentials, while CloudWatch collects container logs. GitHub Actions builds and deploys the backend containers and frontend assets, connecting the application architecture to its delivery pipeline.
+
 **Numbered architecture walkthrough:**
 
 1. **User access** — React 19 + Vite frontend served by CloudFront and S3. API calls originate from the browser and use the configured API endpoint.
