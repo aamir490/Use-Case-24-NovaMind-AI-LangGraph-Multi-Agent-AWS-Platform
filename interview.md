@@ -1,768 +1,1020 @@
-# NovaMind AI — Interview Preparation
+# Project Interview Guide
 
-Grounded in the checked-in codebase, `task-defs/`, CI workflow, and `deploy-guide-aws-original.md`. Separates **what runs today** from **what the AWS guide describes** you must provision manually.
+**NovaMind AI — AWS Generative AI / Agentic AI portfolio preparation**
 
----
+Start with a short answer, then use the technical sections for follow-up questions. Timings are rehearsal targets; speak in your own words.
 
-## Project story (Problem → Production)
+**Evidence rule:** “Implemented” means visible in application code or checked-in configuration. “Documented deployment” means described in the provisioning guide, not live-verified. “Future improvement” means proposed work. Screenshots do not establish current health, availability or scale. No measured latency, cost savings, customer adoption or throughput is established by this repository review.
 
-**Problem.** Users bounce between chat apps, search tabs, IDEs, slide tools, and PDF viewers. Nothing ties identity, billing, and history together.
+This guide was cross-checked against frontend and backend source, every specialist, graph/configuration files, Dockerfiles, task definitions, deployment workflow, README and other project documentation. Package inventories distinguish dependencies from active integrations. Older documentation is context, not proof where it conflicts with executable code.
 
-**Architecture choice.** I split the backend into five services so identity, persistence, AI orchestration, and payments can evolve independently. The **gateway** is the only browser-facing API: it validates a Redis-backed session cookie and forwards `x-user-id` so downstream services stay simple.
+## Navigation
 
-**Development.** The frontend is React with Redux for conversations and messages. Firebase handles Google OAuth in the browser; the auth service verifies ID tokens and mints server sessions. The chat service owns MongoDB models for conversations and messages. The agent service owns LangGraph and all third-party AI integrations.
+- [Introduction](#project-introduction)
+- [Architecture diagram](#architecture-diagram)
+- [Architecture speaking scripts](#how-to-explain-the-architecture-in-an-interview)
+- [Project storytelling](#how-i-tell-the-story-of-this-project)
+- [Tell me about your project](#tell-me-about-your-project)
+- [Request flow](#end-to-end-request-flow)
+- [Six user scenarios](#end-to-end-scenarios)
+- [LangGraph](#langgraph)
+- [RAG pipeline](#rag-pipeline)
+- [AWS services](#aws-services-and-why-they-are-used)
+- [Security](#security)
+- [Implemented versus proposed](#implemented-vs-production-improvements)
+- [Why questions](#why-questions)
+- [Question bank](#interview-question-bank-and-cross-questions)
+- [Troubleshooting](#troubleshooting-interview-scenarios)
+- [Documentation corrections](#documentation-corrections-and-evidence-boundaries)
+- [Quick revision](#10-minute-interview-revision-sheet)
 
-**Agentic AI.** I used LangGraph not for autonomous planning, but to make routing explicit: a router node, eight specialists, and one important chain (`search → chat`) so web answers are synthesised from Tavily results instead of hallucinated from the model alone.
+## Project Introduction
 
-**AWS.** Containers are Node 22 Alpine. Task definitions target ECS Fargate, Cloud Map for internal DNS, ElastiCache for Redis, ECR for images, Secrets Manager for keys, S3 + CloudFront for the static UI, and an ALB in front of the gateway. GitHub Actions on `main` rebuilds images, redeploys ECS services, syncs the Vite build to S3, and invalidates CloudFront.
+NovaMind AI is an authenticated workspace for chat, research, coding, document generation, image generation and questions about uploaded files. React provides the interface; five Express services handle API routing, identity, conversations, AI workflows and payments. LangGraph connects the AI processing steps. AWS configuration supports container deployment and static frontend delivery.
 
-**Testing.** There is no real automated test suite yet—only a placeholder npm test script. I relied on manual flows: login, each agent type, billing, admin.
+**Remember: five backend services, eight specialist agents, nine named graph nodes including the router.** The eight agents are functions inside the Agent service, not eight separately deployed containers.
 
-**Production honesty.** The repo is **deployment-ready configuration**, not proof every AWS resource is healthy. I would verify ALB target health, Redis connectivity, secret injection, and cross-origin cookies before calling it production-grade. I also documented known gaps: chat ownership checks, exposed auth mutation routes, and secrets that must be rotated out of task definitions.
+## Problem Statement
 
----
+A user may need different tools to search the web, explain a document, write code and create a presentation. This project brings those tasks into one interface with identity, history and usage credits. The repository does not establish customer research or measured productivity improvements.
 
-## 4–5 minute explanation (speak naturally)
+## Solution
 
-Use this as a script outline—not word-for-word documentation.
+The user sends a prompt, optionally selects a specialist or attaches a file, and receives a result from the appropriate workflow. Text appears in chat; generated code appears in a code panel; documents and images can be downloaded through S3 links.
 
-> I built NovaMind AI as a credit-based multi-agent workspace—think one authenticated UI where you can chat, run web research, generate code projects, create PDFs and PowerPoints, generate images, ask questions over an uploaded PDF, or analyse an uploaded image.
->
-> On the frontend I used React with Vite and Redux. Users sign in with Google through Firebase; the client sends the Firebase ID token to my API gateway, which proxies to the auth service. Auth verifies the token with Firebase Admin, upserts the user in MongoDB, and stores a seven-day session in Redis behind an HTTP-only cookie. Every protected API call goes through the gateway, which loads that session and forwards the user id to microservices in a header—so chat, agent, and billing never parse cookies themselves.
->
-> The interesting part is the agent service. I modelled workflows with LangGraph: a router node first. If the user picked an agent in the UI, I honour that. If they attached a PDF or image, I route to PDF RAG or image analysis regardless. Otherwise a Groq model classifies the prompt into chat, search, coding, PDF, PPT, or vision. Each node is a focused pipeline—search calls Tavily and then hands results to the chat node so the final answer is grounded in retrieved text. Coding uses DeepSeek via OpenRouter and can return a JSON file tree rendered in Monaco. PDF and PPT agents ask the LLM for structured JSON, render binaries with PDFKit and PptxGenJS, upload to S3, and return presigned links. Vision refines the prompt with Groq, calls Stability’s API, and stores PNGs in S3. PDF RAG chunks the document, embeds with Gemini, writes a fresh Qdrant collection per upload, retrieves top chunks, and answers with strict context-only prompting.
->
-> Persistence is MongoDB Atlas—users, messages, payments. Redis holds sessions, a rolling window of the last twenty messages per conversation for prompt context, and per-minute rate limits. Credits are enforced in the auth service; agents call deduct-credits after successful work. Billing integrates Razorpay with HMAC verification and then updates plan and credits internally.
->
-> For AWS I containerised all five backend services. The intended layout is ECS Fargate behind an ALB for the gateway, Cloud Map DNS between services, ElastiCache for Redis, ECR for images, Secrets Manager for sensitive env vars, and S3 plus CloudFront for the static frontend. CI is GitHub Actions: build and push five images, force ECS redeployments, build the frontend with Vite env vars baked in, sync to S3, invalidate CloudFront.
->
-> Trade-offs I’m transparent about: routing is deterministic, not a self-correcting agent loop; generation is synchronous; and I’d harden internal auth routes, add conversation ownership checks, and move long-running jobs to a queue before calling it enterprise-ready. That’s the system I designed, built, deployed, and debugged end to end.
+## Business/Technical Use Case
 
----
+An example user researches a topic, requests an explanation, generates example code and creates a presentation. Another uploads a text-based PDF and asks a question about its contents. These are example use cases, not claims of paying customers. Technically, the project demonstrates model integration, workflow state, identity, persistence, usage accounting and AWS delivery.
 
-## Agentic AI — how to explain it in interviews
+## Key Features
 
-### Why this counts as “agentic”
+- Firebase Google sign-in and Redis-backed session cookies.
+- Automatic or explicit workflow selection.
+- Groq chat, Tavily search and DeepSeek coding assistance.
+- PDFKit documents, PptxGenJS presentations and Stability AI images.
+- Gemini image analysis and Gemini/Qdrant PDF retrieval.
+- MongoDB conversation history, credit plans, Razorpay verification and admin views.
+- Read-only Monaco code display and a sandboxed HTML/CSS/JS iframe preview.
+- Browser speech recognition where supported; no AWS speech service integration.
+- Five Dockerized services, ECS task definitions and GitHub Actions deployment.
 
-- **Specialised behaviours** selected by rules + LLM classification.
-- **Tool invocation** (Tavily, Stability, Qdrant, S3, local PDF/PPT builders).
-- **Shared state** carried through LangGraph (`searchResults`, `artifacts`, `file`, etc.).
-- **Multi-step workflow** where search retrieval is separated from answer generation.
+## Technology Stack
 
-### Why it is not “full autonomy”
+| Area | What this project uses |
+|---|---|
+| Frontend | React 19, Vite 8, React Router 7, Redux Toolkit, Tailwind CSS 4, Axios |
+| Output UI | React Markdown, syntax highlighting, Monaco, Motion, Lucide/React Icons |
+| Backend | JavaScript ES modules, Node.js 22 Docker base, Express 5, Mongoose, ioredis, Multer |
+| Orchestration | LangGraph StateGraph, LangChain messages/provider integrations |
+| Text and multimodal models | Groq `openai/gpt-oss-120b`, Gemini `gemini-2.0-flash`, OpenRouter `deepseek/deepseek-chat` |
+| Retrieval | pdf-parse, recursive character splitting, `gemini-embedding-001`, Qdrant |
+| Tools | Tavily, Stability AI REST, PDFKit, PptxGenJS, AWS S3 SDK |
+| Identity/payment | Firebase browser and Admin SDKs; Razorpay and HMAC verification |
+| Data | MongoDB Atlas, Redis/ElastiCache, Qdrant Cloud, S3 |
+| AWS configuration | ECS Fargate, ECR, Cloud Map URLs, Secrets Manager references, IAM roles, CloudWatch Logs |
+| Network/frontend guide | VPC, subnets, ALB, NAT, security groups, S3 frontend and CloudFront |
 
-- No open-ended tool loop or planner that revisits goals.
-- No reflection/retry agent or human approval gate.
-- Single request/response HTTP path—no background workers or streaming tokens.
+Model names above are configured identifiers, not verified current availability or benchmark rankings. Bedrock's runtime SDK is installed but is not used by the active agent code. No fine-tuning or self-hosted inference is implemented.
 
-### Decision flow (memorise order)
+# Architecture Diagram
 
-1. Explicit agent from UI (unless `auto`).
-2. PDF MIME → `pdfRag`.
-3. Image MIME → `imageAnalyzer`.
-4. Groq router → one of six labels.
-5. Execute node → rate limit → work → deduct credits → persist.
+[![NovaMind AI — AWS architecture poster](new-project-pic/novamind-aws-architecture-poster.png)](new-project-pic/novamind-aws-architecture-poster.png)
 
-### Context and state
+This is the **exact image used by README.md**, reused without copying or editing it. Its five services, eight specialists, provider assignments, retrieval steps and deployment pipeline match the main implementation. Its AWS network layout represents the documented deployment design.
 
-- **Short memory:** Redis list, max 20 messages; hydrated from chat DB on cache miss.
-- **Long memory:** MongoDB messages per conversation.
-- **Uploads:** temp disk on agent container; deleted in `finally`.
+**Explain these qualifications when using the picture:**
 
-### Error handling
+- The browser calls the API; S3 does not forward API requests. Locally the browser goes directly to Gateway on port 8000.
+- ALB forwards to Gateway, which independently proxies the four domain services. Auth, Chat, Agent and Billing are not a processing chain.
+- Subnet boxes do not prove multi-AZ replicas, failover or autoscaling. The poster's least-privilege label still requires real IAM policy review.
+- PDF indexing and answering occur in one request. The panel does not establish persistent PDF follow-up retrieval.
+- ECR, IAM and Secrets Manager are supporting AWS services, not containers hosted inside the VPC. The poster groups them visually.
+- Application source and task definitions take precedence over illustrative labels. No live AWS inventory was queried in this review.
 
-- Rate limits throw structured 429 from agent middleware.
-- Many agents catch errors and return friendly `aiResponse` strings instead of failing the HTTP request.
-- Credit deduction failures are logged but **not** propagated from `deductCredits.js` util.
+# How to Explain the Architecture in an Interview
 
-### Limitations to admit confidently
+## Architecture Walkthrough
 
-- Router LLM can return invalid labels; graph defaults toward chat via switch default.
-- PDF RAG creates a new Qdrant collection every time—no cleanup.
-- Chat APIs don’t verify the conversation belongs to the caller.
-- No streaming; long PDF/PPT/image jobs risk gateway timeouts.
+Begin with what the user does, follow the request, then explain the supporting infrastructure.
 
----
+### 30-Second Explanation
 
-## Interview Q&A
+“The user opens a React website delivered through CloudFront and S3. API requests go through an ALB to my Gateway, which checks the session and routes the request. AI requests reach an Agent service where LangGraph selects one of eight workflows. Those workflows call external models and tools. MongoDB saves conversations, Redis supports sessions and memory, and S3 holds generated files.”
 
-### Architecture
+### 1-Minute Explanation
 
-### AWS Architecture Diagram
+“There are two paths in the diagram. CloudFront and S3 deliver the website. Separately, the browser sends API requests through the ALB to an Express Gateway. After checking the Redis session, Gateway calls Auth, Chat, Agent or Billing depending on the route.
 
-![NovaMind AI AWS Architecture](new-project-pic/architecture.jpg)
+“For AI requests, Agent runs a LangGraph workflow. It respects an explicit selection first, checks file types next, and otherwise asks Groq to classify the prompt. All eight specialists run inside this service. Search uses Tavily followed by Chat; PDF questions use Gemini embeddings and Qdrant before Groq answers.
 
-**Use this diagram in interviews to explain the system visually. Walk through each layer:**
+“The task definitions run the services on Fargate with logging and secret configuration. The network layout comes from the deployment guide. I would verify live resources before claiming availability guarantees.”
 
-1. **Client Layer** — React SPA loaded from CloudFront/S3; Google sign-in via Firebase; API calls go to ALB via `VITE_SERVER_URL`
-2. **AWS Infrastructure** — VPC with public/private subnets; ALB terminates HTTPS and forwards to Express Gateway on ECS Fargate port 8000
-3. **Application Layer** — 5 ECS Fargate microservices communicating via Cloud Map DNS (`novamind.local`); Gateway injects `x-user-id` header
-4. **AI/Agent Layer** — LangGraph `StateGraph` routes to 8 specialist agents; each calls its own LLM/tool (Groq, Gemini, DeepSeek, Stability AI, Tavily, Qdrant)
-5. **Data Layer** — Redis (sessions + agent memory), S3 (generated PDFs/PPTs/images), MongoDB Atlas (users/conversations/payments), Qdrant (PDF RAG vectors)
-6. **Security** — Secrets Manager injects all API keys at ECS task startup; IAM task roles for S3 access; CloudWatch for container logs
+### 3-Minute Explanation
 
----
+“I explain the architecture in three parts: getting into the application, processing a request, and operating the system.
 
-**Q: Why microservices instead of a monolith?**  
-A: Identity, chat CRUD, AI orchestration, and payments have different scaling and failure profiles. The agent service pulls heavy dependencies (LangChain, PDF libs, S3). Isolating it limits blast radius and lets me redeploy AI changes without touching billing. Cost is operational complexity—Cloud Map URLs, five containers, shared Redis.
+“First, the React frontend is built with Vite. S3 stores the files and CloudFront delivers them. A user signs in with Google through Firebase. The browser sends the Firebase ID token to Auth, which verifies it, finds or creates a MongoDB user, and creates a Redis session. The browser receives an HTTP-only session cookie.
 
-**Q: Why an API gateway?**  
-A: Single CORS origin and cookie domain, one place for session validation, and consistent injection of `x-user-id`. The browser never talks to internal service ports directly.
+“Second, the browser sends API requests to its configured endpoint. In the deployment design, an ALB forwards them to Gateway on port 8000. Protected routes look up the cookie in Redis. Gateway then forwards the user ID and proxies to a domain service. Auth handles accounts and credits; Chat handles persistence; Billing handles Razorpay; Agent handles AI processing. Cloud Map URLs let the services find each other internally.
 
-**Q: How do services find each other locally vs AWS?**  
-A: Environment variables. Localhost URLs in `.env`; ECS task definitions use Cloud Map hostnames like `novamind-chat.novamind.local:8002`.
+“Agent saves the user's message through Chat and invokes LangGraph. The router uses an explicit choice before checking PDF or image attachments. Without either, Groq classifies the prompt. The graph has eight specialists, but they are functions in one process. It is a bounded workflow, not an autonomous planner.
 
-**Follow-up:** What happens if Redis is down?  
-Session validation fails at gateway → users cannot call protected APIs. Agent memory and rate limits also break.
+“A search request calls Tavily and passes the results into Chat for synthesis. Coding uses Groq for intent classification and DeepSeek through OpenRouter for the answer. A PDF question extracts and chunks the file, creates Gemini embeddings, retrieves useful Qdrant chunks and asks Groq to answer from context. Generated documents and images use S3 download links. The controller updates memory, saves the assistant message and returns JSON to React.
 
-**Difficult:** How would you secure service-to-service calls?  
-Today they’re trust-on-LAN HTTP. I’d add an internal HMAC or mTLS on a private subnet, and never expose auth mutation routes on the public auth prefix.
+“Finally, Fargate runs containers. ECR stores images, Secrets Manager supplies configured startup values, IAM roles grant permissions and CloudWatch collects logs. GitHub Actions rebuilds images and requests ECS redeployments, then publishes the frontend.
 
----
+“The next steps are authorization fixes, reliable billing and failures, persistent PDF retrieval and tested readiness checks. I would not claim autoscaling, full high availability or benchmark results from the current repository.”
 
-### Agentic AI and LangGraph
+### 5-Minute Technical Walkthrough
 
-**Q: Why LangGraph instead of a single prompt with function calling?**  
-A: The product has distinct pipelines with different tools and post-processing. The graph makes branching explicit and gives a clean `search → chat` composition without nesting callbacks in one handler.
+**Frontend — about 45 seconds.**
 
-**Q: How many agents?**  
-A: Eight graph nodes: router plus seven specialists (chat, search, coding, pdf, ppt, vision, pdfRag, imageAnalyzer)—router is not a user-facing “agent” but a node.
+“The product is one account-based workspace for different AI tasks. The static React application has Redux slices for users, conversations, messages and artifacts. CloudFront delivers the S3 build. The browser has a separate Axios client using VITE_SERVER_URL and credentialed requests. The static website does not process prompts. In local development that client calls Gateway directly.”
 
-**Why LangGraph vs plain Express switch?**  
-LangGraph gives a maintainable state object and conditional edges; for this scale a switch would work, but the graph documents workflow structure for future async nodes.
+**Identity and entry — about 50 seconds.**
 
----
+“Google sign-in produces a Firebase ID token. Auth verifies it with Firebase Admin, finds or creates the user, and writes a UUID session into Redis. The cookie is HTTP-only; production settings enable Secure and SameSite=None. Gateway reads the session for protected routes and supplies x-user-id to a downstream service. ALB is the documented public API entry, and Cloud Map provides private service names. Login must be public, but the current public Auth proxy is broader than login and needs hardening.”
 
-### LLMs and prompt engineering
+**Services and graph — about 70 seconds.**
 
-**Q: Which model for what?**  
-A: Groq `openai/gpt-oss-120b` for chat, routing, search synthesis, and vision prompt refinement. Gemini `gemini-2.0-flash` for multimodal image Q&A. Gemini embeddings for RAG. OpenRouter DeepSeek for coding.
+“The five services are Gateway, Auth, Chat, Agent and Billing. Each has a Dockerfile and task definition. Agent first asks Chat to save the input, then invokes a StateGraph with the prompt, conversation ID, selection, user ID and optional file. Nine nodes are named: a router and eight specialists. Explicit selection wins over file detection. A PDF in Auto selects PDF RAG; an image selects image analysis. Otherwise Groq returns a label. Unknown labels fall through to Chat in the graph switch. Search is the special two-stage path: Tavily retrieval followed by Chat. There are no graph checkpoints, approval stages or autonomous planning loops configured.”
 
-**Q: How do you reduce hallucination in search?**  
-A: Tavily results are injected into the chat system prompt with instructions to use only that context. It’s prompt grounding—not citation verification or reranking.
+**AI, data and response — about 70 seconds.**
 
-**Q: PDF RAG prompts?**  
-A: System message restricts answers to uploaded context with a fixed fallback sentence if missing.
+“Groq handles most text tasks and routing. DeepSeek through OpenRouter handles coding; Gemini supplies image analysis and embeddings. PDF RAG extracts text, splits at one thousand characters with two hundred overlap, creates a Qdrant collection and retrieves five chunks. Groq receives the context and an instruction to answer only from it. That is grounding, not a guarantee against hallucination. The collection ID is not saved to the conversation, so persistent document follow-up is missing.
 
-**Follow-up:** Do you use Bedrock?  
-No—Bedrock SDK is in package.json but unused; all inference is via Groq, Google, OpenRouter, Stability, Tavily, Qdrant.
+“Document agents ask for JSON, create files locally and upload to S3. Image generation refines a prompt with Groq and calls Stability AI. Code generation returns files for Monaco and a limited iframe preview; there is no server-side execution. The controller records the answer through Chat, updates Redis memory, and returns answer, images and artifacts.”
 
----
+**AWS operations — about 45 seconds.**
 
-### Tool calling
+“The task definitions select Fargate and awsvpc networking. Agent requests one vCPU and two GiB; the other services request half a vCPU and one GiB. ECR stores images, the execution role supports startup operations, task roles grant application access, and awslogs sends container output to CloudWatch. The guide places tasks in private subnets with NAT for external providers. It describes security groups, but those instructions are not proof of current rules or multi-AZ resilience.”
 
-**Q: Is Tavily “tool calling”?**  
-A: It’s invoked imperatively via LangChain’s Tavily tool in the search node—not dynamic OpenAI-style tool selection. Same for Stability `fetch` and Qdrant vector store helpers.
+**Delivery and trade-offs — about 40 seconds.**
 
----
+“GitHub Actions pushes five mutable image tags and calls force-new-deployment. The frontend job builds React, syncs S3 and invalidates CloudFront. There is no ECS stability wait or automated test stage. Before production, I would close exposed mutations and missing ownership checks, rotate exposed credentials, make payment updates idempotent, and add deadlines, consistent failures and readiness tests. That distinguishes an integrated portfolio implementation from production guarantees.”
 
-### RAG
+# How I Tell the Story of This Project
 
-**Q: Walk through PDF RAG.**  
-A: Multer saves PDF → pdf-parse text → 1000-char chunks, 200 overlap → embed with Gemini → new Qdrant collection → similarity search top 5 → Groq answers with context-only system prompt → temp file deleted.
+Use this outline naturally. The code cannot verify your motivation, exact development timeline or personal incident history. Only add personal details you can substantiate.
 
-**Q: Do you reuse vectors across sessions?**  
-A: Not in current code—each upload creates `pdf-{timestamp}` collection without deletion logic.
+1. **Problem:** “The application brings multiple AI tasks into one workspace rather than making users switch tools.”
+2. **Why I built it:** “It is my portfolio example connecting generative AI to a usable application and AWS delivery.” Add your actual personal motivation.
+3. **Initial design:** “The design separates the UI, accounts, conversations, AI processing and payments.” Do not invent a previous monolith or development sequence.
+4. **Why Agentic AI:** “A request selects a workflow and tools, instead of always making one generic model call.”
+5. **Why LangGraph:** “I can point to the router, named nodes and Search-to-Chat edge in one graph definition.”
+6. **Why specialists:** “Code, images and documents require different preparation and output handling.”
+7. **Application architecture:** “Five services separate responsibilities, with Gateway as the intended browser entry.”
+8. **Containerization:** “Each service has a Node 22 Alpine image built with the shared backend directory.”
+9. **AWS delivery:** “Task definitions and the workflow show container delivery; the guide describes network provisioning.”
+10. **Security:** “Firebase verifies identity, Redis stores sessions, and IAM/Secrets Manager support access. I can also explain remaining authorization gaps.”
+11. **Monitoring:** “CloudWatch collects logs. Tracing and business metrics are future work.”
+12. **Challenge:** “A possible engineering challenge is separating a provider failure from a persistence or network failure.” Do not claim a hypothetical outage happened to you.
+13. **Solution:** “I would investigate each boundary and add typed errors, deadlines and correlation IDs.” These are proposed controls.
+14. **Learning:** “An AI answer is only one part of reliability; authorization, retries, billing and operations matter too.” Personalize this with a verified example.
+15. **Next step:** “First protect users and balances, then make processing recoverable, then optimize scale using measurements.”
 
----
+For behavioral answers, use **situation → task → action → verified result → lesson**. Old notes mention a model retirement, S3 region errors and a secret-scanning incident. Those notes alone do not establish the cause or your personal experience. Say “Here is how I would investigate it” when evidence is missing.
 
-### APIs and backend
+# Tell Me About Your Project
 
-**Q: Main agent endpoint?**  
-A: `POST /api/agent/chat` multipart: `prompt`, `conversationId`, `agent`, optional `file`.
+### 30-second answer
 
-**Q: How are messages stored?**  
-A: Agent calls chat service `save-message` before and after graph execution; chat writes MongoDB `Message` documents.
+“NovaMind AI is my portfolio project for bringing multiple AI tasks into one authenticated workspace. Users can chat, search, generate code and documents, or ask about uploaded files. It uses React, five Node.js services and eight LangGraph specialists, with AWS container deployment. The interesting part is the complete request path—from identity and routing to AI tools, storage and delivery.”
 
-**Q: Credit costs?**  
-A: chat 1, search 5, coding/pdf/ppt/vision 10 (auth service map). Rate limits separate in Redis.
+### 1-minute answer
 
----
+“NovaMind AI combines AI workflows in one interface with sign-in, history and credits. React handles the UI. The backend is split into Gateway, Auth, Chat, Agent and Billing.
 
-### Frontend
+“The Agent service contains a LangGraph router and eight specialists. Users can choose a workflow, or the router uses the file type and prompt. Search uses Tavily, coding uses DeepSeek through OpenRouter, and PDF questions use Gemini embeddings with Qdrant before Groq answers. Generated documents and images go to S3.
 
-**Q: How is auth persisted in the UI?**  
-A: Redux `userSlice` hydrated from `GET /api/me` on load; login updates from auth response.
+“The repository includes Dockerfiles, Fargate task definitions and GitHub Actions deployment. I can explain both the integrated design and its limitations: synchronous generation, missing persistent PDF retrieval, and authorization and billing controls that need hardening.”
 
-**Q: Coding output UX?**  
-A: Artifacts array with files rendered in Monaco side panel (`Artifact.jsx`).
+### 2-minute answer
 
-**Q: Admin security?**  
-A: Route guard checks email client-side; real enforcement is `adminProtect` on auth service comparing `ADMIN_EMAIL`.
+“The problem is switching between separate tools for chat, research, coding, presentations and document questions. NovaMind AI puts those tasks behind one Google-authenticated interface with history and usage credits.
 
----
+“The frontend uses React and Redux. Firebase verifies identity, and Auth creates a Redis session. API requests go through an Express Gateway to separate account, conversation, AI and payment services. The AWS design runs those services on Fargate, while S3 and CloudFront deliver the website.
 
-### Docker
+“The AI implementation is a bounded LangGraph workflow. It does not invent an open-ended plan. It has routing rules, a classifier, eight specialists and a Search-to-Chat chain. Each specialist has its own integration: DeepSeek for coding, Stability AI for generation, Gemini for image analysis, and Groq for most text work.
 
-**Q: Why is Docker build context `backend/`?**  
-A: Dockerfiles copy `shared/redis` alongside each service. Building from the service folder alone breaks `COPY shared`.
+“For PDF questions, Agent parses and chunks the upload, embeds it with Gemini, stores vectors in Qdrant, retrieves five useful chunks and asks Groq to answer from them. The answer returns to chat, and the Chat service persists messages. Generated files use S3 download links.
 
-**Q: Local Redis?**  
-A: Only Redis runs in Compose; app processes run on host with nodemon.
+“The workflow builds ECR images and redeploys ECS services; task definitions configure CloudWatch and Secrets Manager. I would not call the whole system production-ready yet. The next steps are stronger authorization, atomic and idempotent billing, consistent failure handling and a persistent document index. I also have no load-test results to justify a claim about thousands of concurrent users.”
 
----
+### Detailed technical answer
 
-### AWS, ECS, ECR
+“I explain three boundaries. At the identity boundary, Firebase verifies the user, Redis stores a session, and Gateway forwards identity to domain services. At the workflow boundary, Agent saves input, invokes LangGraph and runs a specialist that calls APIs or creates files. At the data boundary, Chat persists messages, Auth stores credits, Billing records payments, Qdrant stores vectors and S3 stores generated binaries.
 
-**Q: CI/CD flow?**  
-A: On push to `main`, build five images, tag/push to ECR, force ECS service deployment per secret names, then frontend build → S3 sync → CloudFront invalidation.
+“These boundaries expose trade-offs. Separate services still share dependencies and trust assumptions. The graph expresses workflow structure but has no configured durable checkpointing. Redis is useful but critical to access. Generating content, charging credits and saving the answer are not one transaction. I would prioritize correctness and security before increasing replica counts.”
 
-**Q: Fargate sizing?**  
-A: Gateway/auth/chat/billing 512 CPU / 1 GB; agent 1024 CPU / 2 GB for heavier workloads.
+Continue with the five-minute walkthrough above when asked for deployment details rather than repeating the introduction.
 
-**Q: Why force new deployment?**  
-A: Same `:latest` tag—ECS needs forced rollout to pull fresh digest.
+## End-to-End Request Flow
 
----
+This is the precise answer to **“What happens after Send?”**
 
-### CloudFront
+1. `ChatInput.jsx` requires non-empty prompt text and no request in progress. A file selection alone is not an upload.
+2. It creates a conversation if needed using `GET /api/chat/create-conversation`, updates a New Chat title, and adds the user message optimistically to Redux.
+3. It sends multipart `FormData`: `prompt`, `conversationId`, lowercased `agent`, optional `file`, to `POST /api/agent/chat`. Axios includes credentials.
+4. AWS deployment uses ALB → Gateway; local development goes directly to Gateway. Gateway checks the Redis session and injects `x-user-id` for this protected route.
+5. The proxy strips its mounted prefix; Agent handles `/chat`. Multer writes allowed PDF/images to local `temp/`, capped at 20 MiB.
+6. Agent calls Chat `/save-message` for user input. These internal calls send a body, not a verified user header.
+7. `graph.invoke` passes state to the router and specialist. The specialist checks a rate bucket, calls models/tools, and requests credit deduction at its own point in processing.
+8. The controller appends user and assistant text to Redis memory and saves assistant content/images/artifacts through Chat.
+9. It returns JSON `{ answer, images, artifacts }`, normally HTTP 200. A caught specialist failure can also return via this path as text.
+10. React clears loading/file state, renders the answer and sets the artifact panel. Helpers returning `null` are not handled safely at every caller.
 
-**Q: What does CloudFront serve?**  
-A: Static React assets from S3—not the API. `VITE_SERVER_URL` must point to the gateway ALB.
+Sources: [ChatInput](frontend/src/components/ChatInput.jsx), [Axios](frontend/utils/axios.js), [Gateway](backend/gateway/index.js), [proxy](backend/gateway/utils/proxyWithHeader.js), [Agent controller](backend/services/agent/controllers/agent.controller.js), [Chat controller](backend/services/chat/controllers/chat.controller.js).
 
-**Follow-up:** Why invalidate `/*`?  
-Ensures users get new JS bundles after deploy; API unaffected.
+## End-to-End Scenarios
 
----
+All six use the authenticated path above. Not every node consumes Redis history or creates S3 objects.
 
-### Cloud Map
+### 1. Normal chat question
 
-**Q: Purpose?**  
-A: Stable internal DNS for service mesh–less microservices in private subnets—replaces localhost in task env vars.
+“Explain Docker containers.” Explicit Chat or Auto selects `chat`. Agent saves input; the node checks the chat bucket, loads Redis history (fetching Chat/MongoDB messages on a miss), creates LangChain messages and invokes Groq. It requests one credit deduction. The controller persists the answer and React renders it. No vector lookup or generated file is required.
 
----
+### 2. Coding question
 
-### IAM
+“Generate an HTML landing page.” `coding` checks its bucket, uses Groq to classify coding intent, then DeepSeek via OpenRouter. Exact `CODE_GENERATION` expects JSON containing `files`; other intents return Markdown. It requests ten credits. Chat stores the Project artifact; React displays read-only Monaco tabs and can preview an `index.html` with CSS/JS in an iframe. It does not execute generated code on the server, install its packages or run its tests.
 
-**Q: Task role vs execution role?**  
-A: Execution role pulls ECR images and writes logs; agent task role grants S3 access for artifact upload; auth has task role for secret access pattern in guide.
+### 3. Web search
 
----
+“Find recent developments in this topic.” Search calls Tavily for up to five results and images, requests five credits, then the fixed graph edge runs Chat. Chat includes search context and history, invokes Groq and requests one more credit. Normal total: **six credits**, with both Search and Chat rate buckets consumed. Search image URLs are returned; they are not uploaded to S3. Grounding does not verify every generated citation.
 
-### Networking
+### 4. Upload a PDF
 
-**Q: How do private tasks reach MongoDB and Groq?**  
-A: NAT gateway outbound (described in guide)—private subnets without public IPs.
+The file picker only changes local UI state. Enter a prompt and click Send with **Auto** selected. Multipart data goes through Gateway and Multer; PDF MIME selects `pdfRag`. Explicit PDF selection instead chooses PDF generation, because explicit selection wins. Extraction, indexing and answering occur in the same request; there is no separate ingestion endpoint or document selector.
 
-**Q: Where is HTTPS terminated?**  
-A: ALB for API; CloudFront for static site (guide)—certificates not in repo.
+### 5. Ask questions about the PDF
 
----
+**With the file attached:** read temp file → pdf-parse → 1,000-character chunks/200 overlap → Gemini embeddings → new `pdf-<timestamp>` Qdrant collection → five retrieved chunks → Groq context-only answer. It uses the shared PDF bucket and ten-credit cost. The controller saves the answer and returns it; the node attempts temp deletion in `finally`.
 
-### Authentication and security
+**A follow-up without the file:** React has cleared the attachment. Neither the conversation nor router retains a document/collection mapping. Auto may choose Chat, and a previous answer in history is not retrieval from the original document. Reattach the PDF in Auto mode to use the implemented RAG path. Persistent multi-turn PDF retrieval is future work.
 
-**Q: Cookie settings in production?**  
-A: `httpOnly`, `secure`, `SameSite=None` for cross-site frontend on CloudFront calling API on another domain.
+### 6. Upload an image
 
-**Q: Biggest auth vulnerability?**  
-A: `/api/auth` proxy without gateway `protect` exposes `/deduct-credits` and `/update-plan` to anyone who can reach the auth service URL.
+Attach a chart and ask for an explanation in Auto. Multer writes the image; routing selects `imageAnalyzer`. It checks the shared image bucket, base64-encodes the file and sends text plus image to Gemini. It requests the ten-credit vision cost and attempts cleanup in `finally`. Chat saves the text response and React displays it. The original image is not automatically stored in S3. Explicit Vision means **generate an image**, not analyze this upload.
 
----
+## Multi-Agent Architecture
 
-### Monitoring, scalability, cost
+Multi-agent here means specialized behaviors with different prompts/tools, selected by a router. It does not mean autonomous agents negotiating or running concurrently. All specialists are functions in one Agent process.
 
-**Q: Observability today?**  
-A: CloudWatch container logs and Morgan on gateway—no custom metrics or tracing in code.
+The UI has six explicit specialist buttons plus Auto. PDF RAG and Image Analyzer are reached normally through Auto file detection, explaining why eight specialist implementations do not mean eight buttons or containers.
 
-**Q: Scale agent service?**  
-A: Horizontally scale ECS tasks behind internal load balancing; shared Redis and Mongo become contention points; rate limits help abuse.
+## LangGraph
 
-**Q: Cost optimisations?**  
-A: Right-size Fargate tasks, ElastiCache node type, CloudFront caching for static assets, presigned S3 instead of proxying files, Qdrant collection cleanup to avoid storage creep.
+- `Annotation.Root` holds prompt, response, agent, conversation ID, search results, images, artifacts, user ID and file.
+- Start → Router → conditional specialist edge; Search → Chat; other specialists → end.
+- Priority: explicit non-Auto selection → PDF MIME → image MIME → Groq classifier.
+- Unknown labels fall through to Chat in the graph switch; router exceptions are a separate failure.
+- `compile()` has no checkpointer. Application Redis memory is not LangGraph checkpointing.
+- `invoke()` is used; no parallel branches, streamed token implementation, approval interrupts, evaluator node or planner/replanner loop.
 
----
+Sources: [graph](backend/services/agent/graph/graph.js), [router](backend/services/agent/graph/router.js), [state](backend/services/agent/graph/state.js).
 
-### Deployment and debugging
+## Individual AI Agents
 
-**Q: Vite env mistake symptom?**  
-A: Frontend built with wrong `VITE_SERVER_URL` → API calls go to localhost or wrong host from users’ browsers.
+| Node | Processing | Requested credits / rate bucket |
+|---|---|---|
+| chat | Redis/Chat history → Groq | 1; chat 20/60s |
+| search | Tavily → Chat through graph edge | 5 plus Chat's 1; search 5/60s plus chat |
+| coding | Groq intent → DeepSeek/OpenRouter → JSON files or Markdown | 10; coding 5/60s |
+| pdf | Groq JSON → PDFKit → S3 | 10; pdf 5/60s |
+| ppt | Groq JSON → PptxGenJS → S3 | 10; ppt 5/60s |
+| vision | Groq refinement → Stability AI → S3 | 10; image 5/60s |
+| pdfRag | Extract/split → Gemini embeddings → Qdrant → Groq | 10; shared pdf bucket |
+| imageAnalyzer | Base64 file + text → Gemini | 10; shared image bucket |
 
-**Q: CORS/cookie symptom?**  
-A: `FRONTEND_URL` mismatch → browser blocks credentials or session not sent.
+Costs describe the normal path, not transactional guarantees. PDF/PPT deduct before file rendering/upload finishes. The helper swallows deduction failures. Most nodes catch errors; Image Analyzer's rate check is outside its `try`.
 
-**Q: ECS task fails to start?**  
-A: Check CloudWatch log group, secret ARN, Redis security group, and image pull permissions on execution role.
+The PPT prompt requests six content slides; the renderer adds cover and closing slides, producing eight if the model follows the prompt. JSON parsing lacks comprehensive schema validation. PDF/image URLs request 1,440 seconds; PPTX requests 86,400 seconds, despite inconsistent user-facing expiry strings.
 
----
+Sources: [agents](backend/services/agent/agents/), [rate limits](backend/services/agent/config/agentLimit.js), [helpers](backend/services/agent/utils/).
 
-### Design decisions — “Why X instead of Y?”
+## RAG Pipeline
 
-| Question | Answer |
-| --- | --- |
-| Redis + MongoDB vs Mongo only? | Sessions and rate counters need fast TTL semantics; chat history stays durable in Mongo. |
-| Groq for router vs rules only? | Natural language intent needs flexibility; rules handle files and explicit UI selection first. |
-| Razorpay vs Stripe? | Implemented Razorpay with INR plan table in code. |
-| Presigned S3 vs streaming through gateway? | Offloads bandwidth; keeps bucket private. |
-| LangGraph vs Temporal/Step Functions? | LangGraph fits in-process Node orchestration; no external workflow engine in scope. |
-| Monorepo microservices vs separate repos? | Single repo simplifies portfolio delivery and shared Redis module. |
+An embedding represents text numerically. Retrieval finds relevant passages; generation writes an answer from them. This does not retrain the model.
 
----
+**Implemented:** text extraction, recursive character splitting, overlap, Gemini embeddings, a fresh Qdrant collection, similarity search with `k=5`, and a context-only Groq prompt. The vector-store integration embeds the query. The application does not explicitly configure a distance metric, so do not claim a tuned cosine setup from this source alone. The installed Qdrant integration can read `QDRANT_API_KEY` from the environment even though the application only passes URL and collection name.
 
-### Troubleshooting scenarios (practice aloud)
+**Not implemented:** OCR, persistent document IDs, conversation/document mapping, tenant metadata filtering, deduplication, collection cleanup, reranking, hybrid search, confidence thresholds, verified citations or evaluation datasets. A file-size cap is not a token/page/time budget.
 
-1. **User logged in but 400 unauthorized on chat.** Session cookie missing or Redis key expired; check `FRONTEND_URL`, `SameSite`, HTTPS, and ElastiCache connectivity from gateway.
+**Proposed evaluation:** build representative PDF/question pairs with known supporting passages, plus unanswerable questions. Measure retrieval recall at five, correctness, answer support, abstention quality, latency and token cost. Test scanned documents, tables, repeated uploads and document prompt injection separately. Tune chunking, k and reranking against this dataset, not one demo. Do not invent scores.
 
-2. **Search works but ignores current events.** Tavily failure returns empty results; chat may answer generically—check Tavily key and agent logs.
+Sources: [PDF RAG](backend/services/agent/agents/pdfRag.agent.js), [vectors](backend/services/agent/config/vectorDb.js), [embeddings](backend/services/agent/config/embeddings.js).
 
-3. **Payment verified but credits unchanged.** Billing calls auth `/update-plan` over internal URL; if auth unreachable or route abused/blocking, credits won’t update—trace billing → auth HTTP status.
+## Frontend Architecture
 
-4. **PDF RAG slow/timeouts.** Large PDF embedding + Qdrant insert synchronously in request path—candidate for async job queue.
+`App.jsx` defines `/` and `/admin`; `main.jsx` supplies Redux. Home performs Firebase popup login and sends the token to Auth. `/api/me` hydrates user state. SideBar selects conversations; ChatArea reloads messages and the latest stored artifact. ChatInput owns prompt/selection/file state. MessageBubble renders Markdown/images; Artifact provides read-only Monaco and an iframe with `sandbox='allow-scripts'`; BillingDrawer opens Razorpay checkout. AdminPage shows statistics, users and payments.
 
-5. **Generated PDF link expired.** Presigned URL TTL vs message text mismatch—pdf agent passes `24*60` seconds while UI text says ten minutes.
+The React admin email check is a navigation guard, not the authorization boundary. `VITE_*` values are public build configuration. API helpers often return null/empty arrays on errors; callers do not consistently distinguish failure from an empty result. There is no streamed token renderer. Speech recognition uses the browser, not a backend transcription service.
 
----
+## Backend/Microservices Architecture
 
-### Difficult interviewer questions
+| Service | Port | Responsibility |
+|---|---|---|
+| Gateway | 8000 | CORS, cookie parsing, Redis lookup, proxy routing, Morgan logs |
+| Auth | 8001 | Firebase verification, User model, sessions, credits, admin APIs |
+| Chat | 8002 | Conversations and messages |
+| Agent | 8003 | Uploads, graph, providers, generated files, memory/rates |
+| Billing | 8004 | Razorpay orders/signature verification, Payment records |
 
-- **Is this production-ready?** Configuration and CI exist; I would not claim production-ready until secrets are scrubbed, auth routes locked down, ownership checks added, tests and alarms exist, and live AWS verified.
+Communication is synchronous HTTP with Axios or proxy middleware, not an event bus. Task environments use Cloud Map names; local environments use localhost URLs. Database connections start after servers begin listening, so root responses do not prove dependency readiness. Auth's admin functions also read Chat/Billing databases directly, weakening strict domain isolation.
 
-- **How do you prevent prompt injection in RAG?** Context-only prompting reduces but does not eliminate injection; would add input sanitisation, chunk scoring thresholds, and logging.
+## Database and Storage
 
-- **Why no streaming?** Not implemented—would add SSE from agent through gateway and adjust load balancer idle timeout.
+- **User:** Firebase UID, profile, plan, credits, total credits, expiry and timestamps.
+- **Conversation:** user ID, title, timestamps. **Message:** conversation reference, role, text, image URLs and artifact files.
+- **Payment:** user/order/payment IDs, amount, currency, plan, credits, status and timestamps.
+- **Agent database:** Agent connects to MongoDB on startup, but persists messages through Chat; no agent-owned message model exists.
+- **S3:** frontend assets and generated binaries have different bucket purposes. Generated code is a JSON artifact stored through Chat, not necessarily an S3 object.
+- **Qdrant:** text/vectors per upload with no lifecycle cleanup or retained document mapping.
 
-- **Single point of failure?** Gateway and Redis are critical; would add Redis replication and multi-AZ ECS for gateway.
+Separate database URIs do not establish independent clusters or failure domains. No tested backup/restore or Atlas HA configuration is established by the active source. Source: [Chat models](backend/services/chat/models/), [User](backend/services/auth/models/user.model.js), [Payment](backend/services/billing/models/payment.model.js).
 
----
+## Redis/Cache
 
-## Questions to ask the interviewer
+Gateway, Auth and Agent actively use Redis. Chat and Billing do not directly use it.
 
-- What SLO do you target for interactive agent latency vs document generation?
-- Is cross-origin cookie auth acceptable long term, or should we move to BFF-only same-site hosting?
-- What compliance requirements apply to user-uploaded PDFs/images?
-- Do you standardise on one observability stack (OpenTelemetry, Datadog)?
+| Key | Actual behavior |
+|---|---|
+| `session-<uuid>` | JSON user snapshot; seven-day expiry on login and relevant credit/plan updates |
+| `user-session-<userId>` | One mapped session ID per user |
+| `messages-<conversationId>` | JSON string array, not a Redis list; hydrated from Chat |
+| `rate:<userId>:<bucket>` | INCR counter; first request separately sets a 60-second expiry |
 
----
+Memory hydration sets a 24-hour TTL, but `addMessage` uses plain SET and removes it. It shifts only one entry when length exceeds 20; an oversized database history is not strictly trimmed to 20. Concurrent read/modify/write can lose updates. On a cold load, history can include the input already saved by the controller, then Chat appends the same current prompt again. Rate INCR and EXPIRE are not one atomic operation.
 
-## Claims to avoid
+**Future:** ordered/limited history queries, proper trimming/TTL, atomic rate updates and conversation concurrency controls. Source: [memory](backend/services/agent/config/memory.js), [rate limits](backend/services/agent/config/agentLimit.js), [shared Redis](backend/shared/redis/redis.js).
 
-- Autonomous multi-agent collaboration or self-healing tool loops.
-- All five services using Redis (only gateway, auth, agent).
-- AWS Bedrock in the inference path.
-- Live AWS deployment verified solely from screenshots or task defs.
-- IaC, autoscaling, WAF, or Razorpay webhooks in the current codebase.
-- `deploy-guide-aws.md` in git (gitignored)—reference `deploy-guide-aws-original.md` or your local copy.
+## Docker and Containerization
 
----
+All five Dockerfiles are **single-stage** `node:22-alpine` builds. They install the backend root package, install service dependencies, copy the service and shared directory, then use `npm start`. Build context is `backend/`, for example:
 
-## Quick reference tables
-
-**Ports:** 8000 gateway · 8001 auth · 8002 chat · 8003 agent · 8004 billing · 6379 Redis (local)
-
-**Plans (INR):** free 100 credits · starter ₹199 / 500 · pro ₹499 / 1000
-
-**Rate limits (per user / minute):** chat 20 · others 5
-
-**Graph edge:** `search → chat` only multi-node chain
-
----
-
-## Stability AI — Image Generation (updated)
-
-### What changed and why
-
-Originally the vision agent used **Amazon Nova Canvas** via Bedrock. After deployment it returned a `LEGACY` model error — Nova Canvas was retired and marked inaccessible for accounts that hadn't used it in 30 days. It was replaced with the **Stability AI REST API** (`stable-image/generate/core` endpoint).
-
-**Q: Why Stability AI over Bedrock for image generation?**  
-A: Nova Canvas was the only text-to-image model available on Bedrock in `us-east-1` and it became legacy. Stability AI's direct API is actively maintained, has a free tier (25 credits), and the integration is a simple `fetch` call — no SDK dependency change needed.
-
-**Q: How does the vision agent work now?**  
-A:
-1. Groq refines the user's raw prompt into a detailed cinematic image prompt.
-2. A `fetch` POST to `https://api.stability.ai/v2beta/stable-image/generate/core` with `Authorization: Bearer` header.
-3. Response is raw binary PNG data (`Accept: image/*`).
-4. Buffer uploaded to S3 via `PutObjectCommand`.
-5. `GetObjectCommand` presigned URL returned to user (expires 24 hours).
-
-**Q: How is the API key handled in production?**  
-A: Stored in AWS Secrets Manager as `novamind/agent/stability-api-key`, injected as `STABILITY_API_KEY` env var into the ECS agent task at startup. Never hardcoded.
-
-**Q: What happens if Stability AI is down?**  
-A: The `fetch` throws or returns a non-200 status; the agent catches it and returns a friendly error string as `aiResponse` — same error boundary pattern as all other agents.
-
----
-
-## GitHub Actions CI/CD — Deep Dive
-
-### Setup steps completed
-
-1. Installed GitHub CLI: `winget install --id GitHub.cli`
-2. Authenticated: `gh auth login` → browser OAuth → logged in as `aamir490`
-3. Fixed `deploy.yml` to pass `VITE_*` env vars to the frontend build step
-4. Created all 16 GitHub Secrets via `gh secret set` CLI
-
-### 16 secrets and their purpose
-
-| Secret | Purpose |
-|--------|---------|
-| `AWS_REGION` | Region for all AWS CLI commands |
-| `AWS_ACCOUNT_ID` | ECR image tagging (`{account}.dkr.ecr...`) |
-| `AWS_ACCESS_KEY` | mlops-user credentials for ECR login |
-| `AWS_SECRET_ACCESS_KEY` | mlops-user credentials for ECR login |
-| `ECS_CLUSTER` | `novamind-cluster` — target cluster for deployments |
-| `GATEWAY_SERVICE` | ECS service name for gateway |
-| `AUTH_SERVICE` | ECS service name for auth |
-| `CHAT_SERVICE` | ECS service name for chat |
-| `AGENT_SERVICE` | ECS service name for agent |
-| `BILLING_SERVICE` | ECS service name for billing |
-| `S3_BUCKET` | `novamind-frontend-prod` — frontend sync target |
-| `CLOUDFRONT_DISTRIBUTION_ID` | `EBG0WA07U0GG8` — cache invalidation target |
-| `VITE_FIREBASE_API_KEY` | Baked into frontend JS bundle at build time |
-| `VITE_RAZORPAY_KEY_ID` | Baked into frontend JS bundle at build time |
-| `VITE_SERVER_URL` | API base URL baked into frontend at build time |
-| `VITE_ADMIN_EMAIL` | Admin email baked into frontend at build time |
-
-### Common CI/CD interview questions
-
-**Q: Why are VITE_* variables GitHub Secrets and not env vars in the container?**  
-A: Vite bakes them into the JS bundle at `npm run build` time — they are not runtime env vars. The build runs inside GitHub Actions, so they must be available as environment variables on the Actions runner, not in the Docker container.
-
-**Q: What happens if you change VITE_SERVER_URL?**  
-A: You must push to `main` to trigger a rebuild. The old JS bundles in CloudFront must also be invalidated — the pipeline does this automatically with `aws cloudfront create-invalidation --paths "/*"`.
-
-**Q: Why `--force-new-deployment` on ECS?**  
-A: All images are tagged `:latest`. ECS won't pull a new image unless forced — it caches the previous digest. Force deployment triggers a rolling replacement: new task starts, old task drains, health check passes, then old task stops.
-
-**Q: How long does the full pipeline take?**  
-A: ~8–12 minutes total. Docker builds (5 images in parallel): ~3–4 min. ECR pushes: ~2–3 min. ECS redeployments: ~2–3 min. Frontend build + S3 sync + CloudFront invalidation: ~1–2 min.
-
-**Q: What if one ECS service deployment fails?**  
-A: The `aws ecs update-service` call itself rarely fails — it just queues the deployment. The real failure shows up as the new task not reaching `RUNNING` state in ECS. CloudWatch logs for that service show why (bad secret ARN, missing env var, crash on startup).
-
-**Q: How would you add rollback?**  
-A: Tag images with the git SHA (`git rev-parse --short HEAD`) in addition to `:latest`. On failure, re-run `ecs update-service` pointing to the previous SHA tag. Currently not implemented — relies on `:latest` only.
-
----
-
-## System Design — Extended Questions
-
-**Q: How would you add streaming (SSE) to the agent responses?**  
-A: Replace the synchronous `graph.invoke()` with `graph.stream()` in LangGraph. The agent route handler writes chunked SSE events. Gateway must not buffer — set `X-Accel-Buffering: no`. ALB idle timeout must be extended (default 60s). Frontend uses `EventSource` or `fetch` with `ReadableStream`. Session and credit deduction stay at the end of stream.
-
-**Q: How would you handle concurrent users hitting the same conversation?**  
-A: Currently no locking — two parallel requests to the same `conversationId` could both read the same last-20 messages from Redis and write duplicate responses. Fix: Redis distributed lock on `conversationId` for the duration of graph execution, or optimistic concurrency in MongoDB messages.
-
-**Q: How would you make PDF RAG production-grade?**  
-A: 
-- Move embedding + Qdrant insert to a background job queue (BullMQ + Redis).
-- Store collection name in MongoDB against the conversation.
-- Add cleanup job to delete Qdrant collections older than N days.
-- Add chunk count limit for very large PDFs.
-- Cache embeddings for the same PDF hash.
-
-**Q: How would you scale the agent service under high load?**  
-A: ECS service auto-scaling on CPU/memory. Agent is stateless (Redis + Mongo are external). Rate limits per user already in Redis. Bottleneck is LLM API latency — add a request queue with BullMQ, set concurrency limit per LLM provider, and return a job ID to the client for polling.
-
-**Q: What database would you use if MongoDB becomes a bottleneck?**  
-A: For user sessions and credits — Redis already handles it. For conversation history — MongoDB works well for document-style messages. For analytics/reporting — push events to a time-series store (DynamoDB or ClickHouse). No change needed at current scale.
-
-**Q: How would you add multi-tenancy (organizations)?**  
-A: Add `orgId` to User model. Credit pools at org level in auth service. Conversations scoped to `orgId`. Admin APIs filtered by org. Rate limits keyed by `orgId` instead of `userId` for shared pools.
-
----
-
-## Behavioral / HR Questions
-
-**Q: Walk me through the biggest technical challenge you faced.**  
-A: The S3 `PermanentRedirect` error in production. The bucket `cretexainovamind` is in `us-east-1` but the agent task definition had `AWS_REGION=ap-south-1` hardcoded — so the S3 client was hitting the wrong regional endpoint. Locally it worked because `.env` had the right region. I debugged it by checking `aws s3api get-bucket-location` which returned `null` (AWS's way of saying `us-east-1`), traced the env var through the task definition, and fixed it by correcting the region and redeploying via ECS.
-
-**Q: How did you decide on the microservice boundaries?**  
-A: I separated by domain ownership and failure isolation. Auth owns identity, sessions, credits — high security sensitivity. Chat owns conversation persistence — pure CRUD. Agent owns all AI logic and third-party integrations — most likely to change and fail. Billing owns payment flows — compliance boundary. Gateway owns the public interface — single CORS/cookie domain.
-
-**Q: What would you do differently if you started over?**  
-A: Add a message queue (BullMQ) from day one for agent jobs so long-running tasks don't block HTTP. Add conversation ownership checks to the chat service. Use infrastructure-as-code (CDK or Terraform) instead of a manual deploy guide. Set up basic integration tests before deployment.
-
-**Q: How do you keep up with AI tooling changes?**  
-A: The Nova Canvas retirement is a real example — AWS deprecated it without much warning. I monitor provider changelogs, pin SDK versions in `package.json`, and design provider integrations behind a thin abstraction so swapping (Nova Canvas → Stability AI) is a single file change.
-
-**Q: Describe a time you made a mistake and fixed it.**  
-A: Committed real API keys inside `deploy-guide-aws.md` and tried to push to GitHub. GitHub's secret scanning blocked the push. I used `git reset --soft` to squash all commits containing the file into one clean commit without the secrets, then gitignored the file going forward. Lesson: sensitive documentation should be gitignored from the start.
-
----
-
-## One-liner answers (quick fire round)
-
-| Question | Answer |
-|----------|--------|
-| What is LangGraph? | A library for building stateful, graph-based AI workflows with nodes and edges |
-| What is a StateGraph? | A directed graph where each node reads and writes a shared state object |
-| What is Cloud Map? | AWS service discovery — gives containers stable DNS names inside a VPC |
-| What is a presigned URL? | A time-limited S3 URL that grants temporary GET/PUT access without AWS credentials |
-| What is ElastiCache? | AWS managed Redis — replaces Docker Redis in production |
-| What is ECS Fargate? | Serverless container runtime — run Docker containers without managing EC2 |
-| What is ECR? | AWS private Docker image registry |
-| What is Secrets Manager? | AWS service to store and inject sensitive env vars securely |
-| What is a task definition? | ECS blueprint: image, CPU, memory, env vars, secrets, IAM roles, log config |
-| What is `force-new-deployment`? | Tells ECS to pull the latest image even if the tag hasn't changed |
-| What is `SameSite=None`? | Cookie policy allowing cross-site requests — required when frontend and API are on different domains |
-| What is RAG? | Retrieval-Augmented Generation — answer questions using retrieved document chunks as context |
-| What is Qdrant? | Vector database for storing and searching embeddings |
-| What is a vector embedding? | A numerical representation of text that captures semantic meaning |
-| What is Tavily? | A search API optimised for LLM-friendly results |
-
----
-
-## Architecture decisions — one-line justifications
-
-| Decision | Justification |
-|----------|--------------|
-| HTTP-only session cookie | Prevents XSS token theft vs localStorage JWT |
-| Gateway injects `x-user-id` | Downstream services stay simple; no repeated token parsing |
-| LangGraph over plain switch | Explicit state machine; clean `search→chat` composition; extensible |
-| Groq for router | Fast inference; cheap; prompt-based routing handles natural language |
-| Gemini for embeddings | Best quality embeddings for RAG; same provider as image analysis |
-| DeepSeek for coding | Specialised code model; cost-effective via OpenRouter |
-| Stability AI for images | Only active text-to-image API available after Nova Canvas retired |
-| Per-upload Qdrant collection | Simplest isolation; no cross-user data leak risk |
-| `:latest` ECR tag | Simple for a portfolio project; production should use SHA tags |
-| 7-day Redis session | Balance between UX (infrequent re-login) and security |
-
-
----
-
-## Complete Technology Reference — Interview Ready
-
-> **NovaMind CortexAI** — Built by Aamir · AWS Generative AI Engineer
->
-> Every item below is verified from actual source files. Use these tables to answer "what did you use and why?" questions confidently.
-
----
-
-### Full Technology Stack — Quick Reference
-
-| Layer | Technology | Version | Why This Choice |
-|-------|-----------|---------|----------------|
-| **Frontend framework** | React | 19.2.7 | Latest stable — concurrent rendering, hooks |
-| **Build tool** | Vite | 8.1.0 | Fastest dev server; tree-shaking for production |
-| **Routing** | React Router DOM | 7.18.4 | Client-side SPA routing |
-| **State management** | Redux Toolkit + react-redux | 2.12.0 + 9.3.0 | Predictable global state for user, conversations, messages |
-| **Styling** | Tailwind CSS | 4.3.1 | Utility-first — no CSS files needed |
-| **HTTP client** | Axios | 1.18.1 | `withCredentials: true` for cookie-based auth |
-| **Code editor** | Monaco Editor (`@monaco-editor/react`) | 4.7.0 | VS Code-quality editor for coding agent artifacts |
-| **Markdown** | react-markdown + remark-gfm + react-syntax-highlighter | 10.1.0 | Renders AI responses with tables, code blocks |
-| **Animations** | motion (Framer Motion) | 12.42.2 | Smooth UI transitions |
-| **Backend runtime** | Node.js (ESM) | 22 (alpine) | Modern ESM modules, lightweight alpine image |
-| **HTTP framework** | Express.js | 5.2.1 | Minimal, fast — all 5 services |
-| **MongoDB ODM** | Mongoose | 9.7.3–9.7.4 | Schema validation + query abstraction over MongoDB Atlas |
-| **Redis client** | ioredis | 5.11.1 | High-performance Redis client — sessions, memory, rate limits |
-| **Proxy** | express-http-proxy | 2.1.2 | Gateway reverse proxy with header injection |
-| **File uploads** | multer | 2.2.0 | Multipart handling — disk storage, 20 MB limit, MIME filtering |
-| **Agent orchestration** | LangGraph (`@langchain/langgraph`) | 1.4.7 | Stateful directed graph — explicit routing, not autonomous planning |
-| **LLM abstraction** | LangChain Core | 1.2.2 | Unified interface across Groq, Gemini, OpenRouter |
-| **Primary LLM** | Groq — `openai/gpt-oss-120b` | @langchain/groq 1.3.1 | Fast inference — chat, routing, PDF/PPT, search synthesis |
-| **Vision + embeddings** | Google Gemini — `gemini-2.0-flash` + `gemini-embedding-001` | @langchain/google-genai 2.2.0 | Multimodal image analysis + best-quality RAG embeddings |
-| **Coding LLM** | DeepSeek via OpenRouter — `deepseek/deepseek-chat` | @langchain/openrouter 0.4.3 | Specialised code model, temp: 0, deterministic output |
-| **Image generation** | Stability AI REST — `stable-image/generate/core` | v2beta | Only active text-to-image after Nova Canvas retired |
-| **Web search** | Tavily Search | @langchain/tavily 1.2.0 | LLM-optimised search, 5 results + images |
-| **Vector DB** | Qdrant Cloud | @langchain/qdrant 1.0.3 | Vector similarity search for PDF RAG |
-| **Text splitting** | RecursiveCharacterTextSplitter | @langchain/textsplitters 1.0.1 | 1000-char chunks, 200 overlap for PDF RAG |
-| **PDF parsing** | pdf-parse | 2.4.5 | Extract raw text from uploaded PDFs |
-| **PDF generation** | PDFKit | 0.19.1 | Programmatic PDF from AI-generated JSON structure |
-| **PPT generation** | PptxGenJS | 4.0.1 | Programmatic PPTX from AI-generated JSON slides |
-| **Auth (client)** | Firebase Auth SDK | 12.15.0 | Google Sign-In popup — returns ID token |
-| **Auth (server)** | Firebase Admin SDK | 13.10.0 | `verifyIdToken` — server-side token validation |
-| **Payments** | Razorpay SDK | 2.9.6 | INR orders + HMAC-SHA256 payment verification |
-| **Containerisation** | Docker — `node:22-alpine` | — | Lightweight, reproducible builds |
-| **CI/CD** | GitHub Actions | ubuntu-latest | Automated build → ECR push → ECS redeploy → S3 sync |
-
----
-
-### AWS Services — Interview Table
-
-| AWS Service | What It Does in This Project | Interview Explanation |
-|-------------|-----------------------------|-----------------------|
-| **Amazon ECS Fargate** | Runs all 5 backend microservices as containers | "Serverless containers — I don't manage EC2. I define CPU/memory in task definitions and AWS handles the servers." |
-| **Amazon ECR** | Private Docker image registry (5 repos) | "Every push to main triggers a CI build that tags and pushes :latest to ECR. ECS pulls from there." |
-| **Amazon S3** | Two purposes: frontend hosting (`novamind-frontend-prod`) + artifact storage (`cretexainovamind`) | "React build files go to S3, served via CloudFront. Agent-generated PDFs/PPTs/images also go to S3 with presigned URLs." |
-| **Amazon CloudFront** | HTTPS CDN serving the React SPA globally | "CloudFront sits in front of S3. It adds HTTPS, global edge caching, and custom error pages for React Router." |
-| **ALB** | HTTPS termination + routing to gateway ECS service | "ALB is the only public entry point for the API. It terminates TLS and forwards HTTP to the gateway container." |
-| **Amazon ElastiCache for Redis** | Managed Redis — sessions, agent memory, rate limits | "I use Redis for three things: session validation on every request, last-20-message context for the agent, and per-user rate limiting." |
-| **AWS Secrets Manager** | Stores 12 secrets — all API keys, MongoDB URIs, Firebase JSON | "No secrets in Docker images or task def plaintext. Secrets Manager injects them as env vars when ECS starts the container." |
-| **AWS Cloud Map** | Internal DNS namespace `novamind.local` | "In ECS, container IPs change on every redeploy. Cloud Map gives each service a stable DNS name like `novamind-auth.novamind.local:8001`." |
-| **AWS IAM** | Three task roles with least-privilege permissions | "The agent task role only has S3 read/write on `cretexainovamind`. The execution role handles ECR pulls and CloudWatch logging." |
-| **Amazon CloudWatch Logs** | Container logs from all 5 ECS tasks | "Every service writes to `/ecs/novamind-<name>` via the awslogs driver. That's how I debug production issues." |
-| **Amazon VPC** | Network isolation — public subnets for ALB, private for ECS | "ECS tasks are in private subnets with no public IPs. Only the ALB is public. NAT Gateway handles outbound calls to Groq, MongoDB, etc." |
-| **NAT Gateway** | Outbound internet from private ECS tasks | "Private subnets can't reach the internet directly. NAT Gateway lets the agent call Groq, Gemini, Tavily, Qdrant, Stability AI." |
-
----
-
-### External Services — Interview Table
-
-| Service | What It Does | How Integrated | Interview Explanation |
-|---------|-------------|---------------|-----------------------|
-| **MongoDB Atlas** | Persistent storage — users, conversations, messages, payments | Mongoose via `MONGODB_URI` connection string (Secrets Manager) | "External managed MongoDB. I use separate URIs per service for isolation. No AWS database needed." |
-| **Firebase Auth** | Google Sign-In | Client SDK (browser popup) + Admin SDK (server token verify) | "Firebase handles the OAuth complexity. The client gets an ID token, sends it to the auth service, which verifies it with Firebase Admin." |
-| **Groq API** | Primary LLM inference | `@langchain/groq` ChatGroq, model `openai/gpt-oss-120b` | "Groq is extremely fast and cheap. I use it for chat, routing classification, PDF/PPT generation, and search synthesis." |
-| **Google Gemini API** | Image analysis + embeddings | `@langchain/google-genai` ChatGoogleGenerativeAI + GoogleGenerativeAIEmbeddings | "Gemini 2.0 Flash handles multimodal image analysis. Same provider for embeddings — `gemini-embedding-001` for PDF RAG." |
-| **OpenRouter → DeepSeek** | Coding LLM | `@langchain/openrouter` ChatOpenRouter → `deepseek/deepseek-chat` | "DeepSeek is a specialised coding model. OpenRouter is the gateway — I can swap the underlying model without changing code." |
-| **Stability AI** | Text-to-image generation | Native `fetch` POST to `v2beta/stable-image/generate/core` | "I replaced AWS Nova Canvas (retired/legacy) with Stability AI. Direct REST API — no SDK needed, just `fetch` with Bearer token." |
-| **Tavily Search** | Real-time web search | `@langchain/tavily` TavilySearch tool | "Tavily is designed for LLM pipelines. It returns clean, structured results. I get 5 results + images and feed them into the chat node." |
-| **Qdrant Cloud** | Vector similarity search for PDF RAG | `@langchain/qdrant` QdrantVectorStore | "Managed vector database in eu-west-1. One collection per PDF upload. I query top-5 chunks by cosine similarity." |
-| **Razorpay** | Indian payment gateway | `razorpay` SDK — `orders.create()` + HMAC-SHA256 verify | "Razorpay is the standard for INR payments. I create an order server-side, client completes payment, then I verify the signature before crediting the account." |
-
----
-
-### LLM Model Selection — Q&A
-
-**Q: Why Groq for most agents?**
-A: Speed and cost. Groq's hardware (LPUs) makes inference 3–10x faster than standard GPU inference. For a conversational product where users expect sub-2-second responses, this matters. `gpt-oss-120b` gives strong reasoning at low cost.
-
-**Q: Why Gemini for embeddings specifically?**
-A: Gemini `gemini-embedding-001` produces high-quality semantic embeddings and is available via the same Google API key already used for image analysis. Keeps the external service count low — one key, two capabilities.
-
-**Q: Why DeepSeek for coding?**
-A: DeepSeek is trained heavily on code. For code generation requests, a coding-specialised model outperforms a general-purpose model. OpenRouter provides the routing layer — if DeepSeek's quality drops, I can swap the model ID without touching the LangChain integration.
-
-**Q: Why not use one LLM for everything?**
-A: Different tasks have different cost/quality tradeoffs. Chat needs speed (Groq). Code needs precision (DeepSeek, temp=0). Image analysis needs multimodal support (Gemini). Embeddings need high-quality vector representations (Gemini). Using the right tool for each task is better engineering.
-
-**Q: Why Stability AI for images instead of DALL-E or Midjourney?**
-A: The original implementation used AWS Nova Canvas via Bedrock. AWS retired it as a legacy model. Stability AI's REST API is the simplest drop-in replacement — a single `fetch` call, no SDK change, free credits to start.
-
----
-
-### Database Design Decisions — Q&A
-
-**Q: Why separate MongoDB databases per service?**
-A: Microservice isolation. If the chat database goes down, auth and billing keep working. It also enforces that services don't query each other's data directly — they must go through the other service's API.
-
-**Q: Why Redis AND MongoDB? Why not just MongoDB?**
-A: MongoDB is durable but slower for high-frequency reads. Redis is in-memory and handles three patterns that need sub-millisecond access: session validation on every API call, conversation context for every agent invocation, and rate limit counters that increment 20+ times per minute.
-
-**Q: Why one Qdrant collection per PDF upload?**
-A: Simplest isolation model. Each user's PDF is completely independent. No risk of one user's document context leaking into another's search results. The downside is collection sprawl with no cleanup — a known gap.
-
-**Q: What is the Redis key design?**
-A:
-- `session-<uuid>` — 7-day TTL, stores full user profile JSON, read by gateway on every protected request
-- `messages-<conversationId>` — 24-hour TTL, sliding window of last 20 messages, read by agent before every LLM call
-- `rate-<userId>-<agentType>` — 60-second TTL, integer counter incremented on each request, throws 429 when limit exceeded
-
----
-
-### RAG Pipeline — Deep Dive Q&A
-
-**Q: Walk me through the full PDF RAG flow.**
-A:
-1. User attaches a PDF in the UI — multer saves it to `./temp/` on the agent container disk
-2. Router detects `application/pdf` MIME type → routes to `pdfRag` node (bypasses LLM classifier)
-3. `pdf-parse` extracts raw text from the PDF
-4. `RecursiveCharacterTextSplitter` splits text into 1000-char chunks with 200-char overlap (overlap preserves context across chunk boundaries)
-5. Each chunk is embedded using Google `gemini-embedding-001` → produces a dense vector
-6. Vectors + chunks stored in a new Qdrant collection named `pdf-{timestamp}`
-7. User's question is embedded the same way, then `similaritySearch(question, 5)` returns the top-5 most relevant chunks by cosine similarity
-8. Groq receives a system prompt: "Answer ONLY from the provided context" + the 5 chunks + the user's question
-9. Response returned to user. `finally` block deletes the temp file from disk.
-
-**Q: What are the limitations of this RAG implementation?**
-A:
-- No collection cleanup — Qdrant collections accumulate with no expiry or deletion
-- No chunk reuse — same PDF uploaded twice creates two separate collections
-- Synchronous processing in the HTTP request path — large PDFs will cause slow responses
-- No re-ranking — top-5 by cosine similarity only, no cross-encoder re-ranking
-- Context window not checked — very long documents could exceed Groq's context limit
-
----
-
-### Security Architecture — Q&A
-
-**Q: How are secrets managed?**
-A: All 12 secrets (MongoDB URIs, API keys, Firebase JSON) are stored in AWS Secrets Manager under the `novamind/*` namespace. ECS injects them as environment variables at container startup using the `secrets` block in the task definition. No secrets are in Docker images, Dockerfiles, or plaintext task definition environment blocks.
-
-**Q: How does session authentication work?**
-A: Firebase returns an ID token after Google Sign-In. The auth service verifies it with Firebase Admin SDK, creates a UUID session ID, stores the user profile JSON in Redis with a 7-day TTL, and returns an HTTP-only cookie containing the session ID. Every subsequent request goes through the gateway's `protect` middleware which looks up `session-<id>` in Redis and attaches the user to `req.user`.
-
-**Q: Why HTTP-only cookies instead of localStorage JWTs?**
-A: HTTP-only cookies cannot be read by JavaScript, protecting against XSS attacks. A malicious script injected into the page cannot steal the session token. JWTs in localStorage are accessible to any script on the page.
-
-**Q: What is the x-user-id header pattern?**
-A: The gateway reads the user ID from the Redis session and injects it as an `x-user-id` header before proxying to downstream services. This means auth, chat, agent, and billing never parse cookies or validate sessions themselves — they just read the header. The gateway is the single trust boundary.
-
-**Q: What are the known security gaps?**
-A:
-1. `/api/auth/*` is proxied without the `protect` middleware — this means `/deduct-credits` and `/update-plan` are accessible to anyone who can reach the auth service URL
-2. Chat service doesn't verify that the `conversationId` belongs to the requesting user
-3. Some task definitions still have plaintext credentials that should be moved to Secrets Manager
-
----
-
-### ECS / Fargate Architecture — Q&A
-
-**Q: How is the Fargate sizing determined?**
-A: Gateway, auth, chat, billing: 0.5 vCPU / 1 GB — lightweight CRUD and proxy workloads. Agent: 1 vCPU / 2 GB — handles heavy PDF parsing, base64 image encoding, multiple LLM calls, and in-memory vector operations.
-
-**Q: How does `--force-new-deployment` work?**
-A: ECS uses `:latest` image tags. Without force, ECS won't pull a new image if the tag name hasn't changed. `--force-new-deployment` tells ECS to pull the current digest of `:latest` from ECR and do a rolling replacement — start new task, drain old task, pass health check, terminate old task.
-
-**Q: What happens if an ECS task crashes?**
-A: ECS services have a `desiredCount: 1`. If the task crashes, ECS automatically starts a new one using the same task definition. The service maintains the desired count. CloudWatch logs capture the crash reason.
-
-**Q: How do services find each other in production?**
-A: AWS Cloud Map provides a private DNS namespace `novamind.local`. When each ECS service starts, it registers its task's private IP with Cloud Map. Other services resolve `novamind-auth.novamind.local:8001` and Cloud Map returns the current task IP. If the task restarts with a new IP, Cloud Map updates automatically within seconds.
-
----
-
-### Full Dependency Versions — Quick Reference Card
-
-#### Agent Service (most complex — all AI dependencies)
-```
-@aws-sdk/client-bedrock-runtime  3.1136.0  (installed, not used)
-@aws-sdk/client-s3               ^3.1083.0
-@aws-sdk/s3-request-presigner    ^3.1083.0
-@google/generative-ai            ^0.24.1
-@langchain/core                  ^1.2.2
-@langchain/google-genai          ^2.2.0
-@langchain/groq                  ^1.3.1
-@langchain/langgraph             ^1.4.7
-@langchain/openrouter            ^0.4.3
-@langchain/qdrant                ^1.0.3
-@langchain/tavily                ^1.2.0
-@langchain/textsplitters         ^1.0.1
-axios                            ^1.18.1
-express                          ^5.2.1
-mongoose                         ^9.7.3
-multer                           ^2.2.0
-pdf-parse                        ^2.4.5
-pdfkit                           ^0.19.1
-pptxgenjs                        ^4.0.1
+```sh
+docker build -f backend/services/agent/Dockerfile -t agent-service backend
 ```
 
-#### Auth Service
-```
-firebase-admin   ^13.10.0
-ioredis          ^5.11.1
-mongoose         ^9.7.3
-express          ^5.2.1
-```
+This includes shared Redis code; using only the service folder as context breaks the COPY paths. Compose starts Redis only. Dockerfiles do not set a non-root USER, container HEALTHCHECK or production-only dependency installation.
 
-#### Gateway
-```
-cookie-parser        ^1.4.7
-cors                 ^2.8.6
-express              ^5.2.1
-express-http-proxy   ^2.1.2
-morgan               ^1.11.0
-ioredis              ^5.11.1  (shared)
-```
+**Build exclusion gap:** `.dockerignore` files exist inside service directories, but there is no context-root `backend/.dockerignore` or Dockerfile-specific ignore file. Root `.gitignore` also ignores `.dockerignore`. For the workflow's build context, those nested files do not provide the intended exclusions. Broad COPY instructions can include local environments, service-account files or dependencies if present during a local build. A clean CI checkout reduces some risks but does not prove every image is secret-free. See [Docker build-context rules](https://docs.docker.com/build/concepts/context/).
 
-#### Billing
-```
-razorpay   ^2.9.6
-mongoose   ^9.7.4
-express    ^5.2.1
-axios      ^1.18.1
-```
+## AWS Services and Why They Are Used
 
-#### Frontend
-```
-react                    ^19.2.7
-vite                     ^8.1.0
-redux-toolkit            ^2.12.0
-react-router-dom         ^7.18.4
-tailwindcss              ^4.3.1
-firebase                 ^12.15.0
-axios                    ^1.18.1
-@monaco-editor/react     ^4.7.0
-react-markdown           ^10.1.0
-react-syntax-highlighter ^16.1.1
-motion                   ^12.42.2
-```
+| Service | Evidence and purpose |
+|---|---|
+| ECS Fargate | Five task definitions request FARGATE/awsvpc; backend container runtime |
+| ECR | Workflow pushes five images referenced by tasks |
+| Cloud Map | Internal `novamind.local` URLs; discovery provisioning described in guide |
+| ElastiCache | Redis endpoints in tasks; sessions, memory and counters |
+| S3 | Active SDK upload/presigning; frontend sync workflow |
+| CloudFront | Frontend URL and invalidation workflow; static distribution in guide |
+| Secrets Manager | Task `secrets` references for database, model, Firebase and billing values |
+| IAM | Execution/task role references and guide policies |
+| CloudWatch Logs | awslogs configuration on all five tasks |
+| VPC, ALB, NAT, security groups | Manual provisioning documented; not a live inventory |
+
+“API Gateway” in project descriptions means the Express service, not the managed Amazon API Gateway product. The current inference path does not use Bedrock, EKS or Lambda.
+
+## ECS/Fargate Deployment
+
+Agent requests 1024 CPU units and 2048 MiB; the other services request 512 CPU units and 1024 MiB. All use awsvpc and FARGATE. Task definitions specify image, resources, environment, secrets, roles, logs and ports. They contain no container healthCheck.
+
+Desired count, subnet selection, target group and deployment settings belong to ECS service provisioning. The guide proposes one task per service; this is not a freshly verified live count. ECS service replacement can maintain desired count after a task stops, but does not resume an in-flight graph or recover a temporary upload. See [AWS service replacement behavior](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/update-service-parameters.html).
+
+## Networking
+
+**Documented:** us-east-1 VPC, public/private subnets, public ALB, private tasks, Cloud Map DNS, NAT egress, private Redis on 6379 and external provider/database connectivity. Atlas access is via external routing and its allowlist, not a demonstrated PrivateLink connection.
+
+Route tables, security groups and DNS determine reachability; a private subnet alone is not an authorization control. The guide uses one NAT AZ to save cost and a Redis development example with zero replicas. Multiple subnet definitions do not establish application HA.
+
+ALB targets should use task IPs for awsvpc; the guide targets Gateway on 8000 with `/` as its check. CloudFront supplies website viewer HTTPS. The guide includes HTTP API and optional custom-domain HTTPS variants, so do not claim an active certificate or CloudFront API origin without inspection. [AWS ALB integration](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/alb.html).
+
+## Security
+
+**Implemented:** Firebase token verification; HTTP-only session cookies with production Secure/SameSite settings; Gateway checks on protected prefixes; an Auth admin email check; MIME/size filtering; IAM/secret references; sandboxed browser preview.
+
+**Important code-review findings, not exploitation claims:**
+
+1. Gateway's entire `/api/auth` prefix is public. Auth exposes `/update-plan` and `/deduct-credits` there without internal authentication.
+2. Auth mounts admin routes at the same service root. The public Auth proxy also creates an alternate route to admin operations, which trust an `x-user-id` header. Protecting `/api/admin` alone does not close this path.
+3. Chat lists conversations by user but does not check ownership on individual message reads, saves or title updates.
+4. `task-defs/auth.json` contains credential-bearing plaintext admin database URIs. Do not copy their values into interview material; rotate and externalize them.
+5. Auth has no cookie-parser middleware, while logout reads `req.cookies`. Clearing the browser cookie does not demonstrate Redis-session revocation. Admin updates/deletions do not reliably invalidate cached sessions either.
+6. No dedicated CSRF controls, comprehensive schema validation or prompt-injection guardrails are configured. CORS and HTTP-only cookies are not substitutes.
+7. Logs expose user/session data and full results; the frontend logs login tokens. Redaction is needed.
+
+Sources: [Gateway](backend/gateway/index.js), [Auth routes](backend/services/auth/routes/auth.route.js), [Auth initialization](backend/services/auth/index.js), [admin middleware](backend/services/auth/middleware/admin.middleware.js), [Chat controller](backend/services/chat/controllers/chat.controller.js), [Auth task](task-defs/auth.json).
+
+## IAM and Secrets
+
+The **execution role** supports ECS startup operations: image pull, configured secret retrieval and logs. The **task role** supplies credentials to application code. Agent has an S3-oriented task-role reference; Auth also has a task role. Role names do not prove least privilege: inspect resource/action scope and any KMS dependencies.
+
+Firebase Admin parses `FIREBASE_SERVICE_ACCOUNT` directly or reads a local JSON file. It does not download that file through an AWS CLI startup script. Secrets injected as environment variables need a new task to pick up a changed value. Frontend VITE variables are public build content, not secret storage.
+
+**Future:** rotate exposed URIs, fix build exclusions, scope policies, verify image contents and use GitHub-to-AWS OIDC instead of the workflow's configured static credentials. Do not say all credentials are already externalized.
+
+## Monitoring and CloudWatch
+
+Console output and Gateway Morgan logs go to `/ecs/novamind-*` groups through awslogs. No configured distributed tracing, correlation IDs, custom business metrics, RAG dashboard or alarm definitions are present in active code/configuration.
+
+During diagnosis, inspect ECS events/stopped reasons, target health and available AWS metrics. Do not assume ALB access logs, Container Insights or alarms are enabled. **Proposed instrumentation:** node latency, provider errors, token cost, credit-update failures, retrieval quality and success/failure counts, with sensitive fields removed.
+
+## CI/CD
+
+**Implemented:** push to main → AWS authentication → five image builds/tags/ECR pushes → five ECS force-new-deployment commands → dependent frontend npm install/build → S3 sync with delete → CloudFront invalidation.
+
+The workflow uses mutable latest tags. It does not register updated task-definition JSON, wait for service stability, run tests/lint, scan images, deploy only changed services, configure concurrency control or automate rollback. A successful backend job means commands succeeded, not that every service is healthy.
+
+**Future:** immutable commit-SHA images, registered task-definition revisions referring to those images, service-stability and smoke-test gates, then frontend promotion. Rollback must select a known-good revision and image digest; a service update does not directly replace an image tag without a corresponding task definition.
+
+Source: [deploy.yml](.github/workflows/deploy.yml).
+
+## Scalability
+
+Services are separate deployment units and much state is external. Uploads and in-flight graph work are local to a task. No autoscaling policy or measured capacity is established. More replicas still share provider quotas, Redis and databases, and can worsen non-atomic updates.
+
+**Future:** measure request mix/concurrency, fix correctness, separate long jobs into queued workers, persist job inputs, bound provider concurrency, then scale using workload signals and load tests. CPU alone may not reveal slow external-model I/O.
+
+## High Availability
+
+Fargate and ALB are building blocks, not an end-to-end guarantee. One task per service, a single NAT AZ and a no-replica Redis example create interruption risks. Active task definitions do not prove multi-AZ replicas, Redis failover, database backups or recovery testing.
+
+**Future:** service replicas across AZs, resilient egress, tested Redis/database failover and restore, and a measured SLO. Failover time and zero data loss must not be promised without testing.
+
+## Fault Tolerance
+
+Most specialist exceptions become fallback text and may be persisted with HTTP 200. Rate-limit errors therefore do not consistently produce HTTP 429. Image Analyzer checks its rate before its try block. Agent's generic error middleware also references undefined `error` instead of `err`.
+
+No explicit application-level deadline, cancellation propagation, durable job retry or provider-fallback policy exists. SDK defaults may retry; that is not a coordinated end-to-end recovery design. Model work, credit deduction, S3 upload and message storage are separate effects.
+
+**Future:** typed errors, deadlines, transient-only backoff, idempotency, compensation, durable job state and graceful shutdown. Avoid blind retries on payment or credit operations.
+
+## Cost Optimization
+
+Discuss cost drivers: task resource-hours, ALB, NAT hours/data, Redis capacity, S3 storage/requests, CloudFront transfer, logs, vectors and external models. User count alone is not a cost model. The repository establishes neither a current bill nor model speed/cost benchmarks.
+
+**Future:** right-size from measurements, reduce repeated embeddings with document hashes, trim prompt context, expire unused artifacts/vectors, set log retention and compare egress options based on traffic. Five always-running services have overhead; a smaller deployment can be a sensible portfolio trade-off.
+
+## Production Readiness
+
+This demonstrates integrated features and deployment configuration. It still requires hardening before handling sensitive user documents or real balances. A screenshot or green deploy badge does not resolve authorization or billing defects.
+
+Validation should cover login/logout, revoked users, cross-user access, all routes, missing keys, provider failures, insufficient credits, replayed payment verification, file cleanup and crashes during generation. The backend test command is a placeholder. Frontend has lint/build scripts; this guide does not claim fresh test or deployment results.
+
+## Limitations
+
+The largest limitations are exposed alternate routes, missing ownership checks, plaintext credentials/build exclusions, non-atomic billing, hidden failures, synchronous processing, nonpersistent PDF retrieval, imperfect memory lifecycle and unverified resilience. No autonomous planner, fine-tuning, verified hallucination prevention or 10,000-user test is implemented.
+
+## Future Improvements
+
+1. Protect users and balances: close alternate routes, verify ownership, rotate credentials, fix revocation, make credits atomic and payments idempotent.
+2. Make workflows reliable: typed results, validation, deadlines, durable jobs and safe retries.
+3. Make RAG reusable: persistent document IDs, authorization, deduplication, cleanup and evaluation.
+4. Make delivery repeatable: infrastructure as code, immutable images, task revision deployment, effective exclusions and automated tests.
+5. Then scale: multi-AZ replicas, tested data failover, provider-aware concurrency, telemetry and capacity measurements.
+
+## Implemented vs Production Improvements
+
+| Topic | Implemented / repository evidence | Proposed or unverified |
+|---|---|---|
+| Graph | Router + eight specialists; Search-to-Chat | Planner loops, checkpointer, approval stages |
+| RAG | Per-upload indexing/top-five retrieval | Persistent follow-ups, tenant filters, reranking/evaluations |
+| Identity | Firebase and Redis sessions | Complete route/ownership checks and revocation |
+| Billing | HMAC verification and credit updates | Idempotency, atomic ledger, webhook reconciliation |
+| Runtime | Five Fargate task definitions | Live health, tested sizing, durable jobs |
+| Networking | Guide and discovery URLs | Confirmed active TLS/SG/subnet/HA configuration |
+| Delivery | ECR push, ECS redeploy, S3 sync, invalidation | Stability gates, automatic rollback, task revisions |
+| Monitoring | Console/Morgan and awslogs | Tracing, custom metrics, alarms/SLOs |
+| Security | IAM/secret references, iframe sandbox | WAF, complete guardrails, verified image exclusions |
+| Scale | Separate services and external data | Autoscaling, 10,000-user capacity, multi-region DR |
+
+## Why Questions
+
+These are defensible design explanations, not claims about undocumented personal decisions or benchmarks.
+
+### Why this project?
+
+It demonstrates the whole product path: identity, AI selection, provider calls, persistence, generated files, payments and deployment. A strong portfolio discussion connects those boundaries instead of stopping at a model API call.
+
+### Why Agentic AI?
+
+Different intents trigger different tool workflows. Search-to-Chat is a clear example of retrieval followed by synthesis. Call it bounded agentic orchestration, not autonomous planning.
+
+### Why LangGraph?
+
+It makes state and transitions explicit. A plain switch could handle this scale, but graph nodes and conditional edges make the workflow easier to inspect and extend. Durability does not appear automatically; it would require checkpoint configuration.
+
+### Why multiple agents?
+
+Code JSON, slide JSON, image binary and document retrieval require distinct prompts and post-processing. Specialists localize those concerns. They do not create independent runtime failure domains because they share one process.
+
+### Why microservices?
+
+Identity, messages, AI and payments have different responsibilities and dependency sets. Separate services permit independent changes. The cost is five deployments and network failure modes; a modular monolith would be a reasonable smaller starting point. Admin database access and synchronous calls limit isolation today.
+
+### Why Node.js?
+
+The implementation uses JavaScript on both sides and integrates HTTP APIs naturally. PDF parsing and file processing can still consume CPU/memory or block the event loop. Async syntax is not a guarantee that heavy work is nonblocking.
+
+### Why React?
+
+The UI has shared account, conversation and result state, reusable components and client-side routes. Redux centralizes updates. React itself does not secure API access or store durable messages.
+
+### Why Docker?
+
+It packages the runtime and dependencies used by ECS. The project benefits from consistent startup commands, but reproducibility still needs pinned artifacts, lockfile installs and clean build contexts.
+
+### Why AWS?
+
+The deployment uses managed container hosting, object storage, CDN, discovery, roles/secrets and logs. AWS hosts the application; model inference currently comes from external APIs.
+
+### Why ECS Fargate?
+
+It matches the existing service containers without requiring host OS administration. Task definitions express resources, ports and roles. It does not remove application operations, networking or reliability design.
+
+### Why not EC2?
+
+EC2 would add host patching, capacity management and placement responsibilities. It may be appropriate with measured steady utilization or host requirements; there is no benchmark proving Fargate is always cheaper.
+
+### Why not EKS?
+
+The current five-service design has no demonstrated need for Kubernetes APIs or operators. EKS would add cluster operations. Consider it when organizational requirements justify that complexity, not to add another logo.
+
+### Why ALB?
+
+The guide uses it as an HTTP entry to the Gateway task IPs with health-based routing. HTTPS listener/certificate configuration remains deployment-specific; ALB does not replace application authorization.
+
+### Why CloudFront?
+
+It delivers the static frontend and supports cache invalidation on deployment. It is separate from model processing. A CDN does not automatically accelerate a synchronous provider call.
+
+### Why Redis/ElastiCache?
+
+Sessions and rate counters need quick lookups and expiry semantics; memory caching avoids repeated history reads. ElastiCache supplies a managed endpoint, but replication/failover must be configured. It is also a critical dependency.
+
+### Why S3?
+
+Generated binaries need durable storage and direct download links. S3 separates download traffic from the Agent response. Code artifacts can remain in MongoDB. Bucket privacy, lifecycle and expiry still need explicit verification.
+
+### Why MongoDB?
+
+Messages, artifacts and profiles fit document-shaped models, and the code uses Mongoose. Credit updates still require transactional/atomic design; flexible schema does not solve payment consistency.
+
+### Why these model providers?
+
+Groq serves general text/routing, DeepSeek via OpenRouter supplies the configured coding model, Gemini handles image input and embeddings, Stability generates images, and Tavily supplies search. This is functional separation; no measured model superiority or current free-tier claim is established. Provider comparisons should use an evaluation set.
+
+### Why this RAG design?
+
+Per-upload parsing/indexing is simple to demonstrate and avoids requiring a permanent knowledge-base UI. Its trade-off is repeated embedding cost, collection growth and no persistent follow-up retrieval. Production work should separate ingestion from authorized retrieval.
+
+## Interview Question Bank and Cross-Questions
+
+Start with the short answer. Add the follow-up detail when asked; do not recite every caveat in your opening pitch.
+
+### 1. What is the strongest technical contribution here?
+
+**Answer:** The repository connects a frontend, identity verification, session-based APIs, specialized AI workflows, persistence, payments and container deployment. The strongest design story is how a request moves through those boundaries. Describe your own contribution only for work you actually performed.
+
+**Follow-up:** What proves these are integrated rather than separate demos?
+
+**Follow-up answer:** Agent persists messages through Chat, invokes the graph, updates memory and returns artifacts to React. Agents also call Auth for credit deduction. These connections demonstrate integration; successful live deployment requires separate evidence.
+
+### 2. What exactly happens after the user clicks Send?
+
+**Answer:** The UI creates a conversation when needed and posts the prompt, selected agent and optional file to `/api/agent/chat`. The gateway resolves the Redis session and forwards the user identity. Agent saves the prompt, runs the graph, stores the result and returns JSON for the UI.
+
+**Follow-up:** Is the response streamed?
+
+**Follow-up answer:** No. The controller awaits `graph.invoke`. Streaming needs coordinated changes to graph execution, the HTTP response, gateway and frontend, including handling partial messages and disconnections.
+
+### 3. How does LangGraph know which agent to select?
+
+**Answer:** Explicit selection comes first. In Auto mode the router checks PDF and image MIME types, then asks Groq to classify text requests. Conditional edges map labels to specialist nodes; an unknown label routes to chat.
+
+**Follow-up:** Can a PDF override an explicit Coding selection?
+
+**Follow-up answer:** No. Explicit selection wins. Router exceptions are also different from unknown labels: there is no general router-exception fallback.
+
+### 4. Is this an autonomous team of agents?
+
+**Answer:** It is a routed set of specialized workflows inside one Agent service: eight specialists plus a router. Most requests run one specialist; search runs search and then chat.
+
+**Follow-up:** Where are planning, reflection and parallel collaboration?
+
+**Follow-up answer:** They are not implemented. The value here is explicit routing and shared workflow state. More complex coordination should be added only when its benefits justify extra latency, cost and failure modes.
+
+### 5. Is LangGraph state durable?
+
+**Answer:** State carries the prompt, agent, conversation/user IDs, file, answer, search results, images and artifacts during an invocation. The graph is compiled without a checkpointer.
+
+**Follow-up:** Does Redis memory let a failed graph resume?
+
+**Follow-up answer:** No. Conversation history is different from an execution checkpoint. Retrying starts another request and may repeat provider calls, writes or credit operations unless those effects become idempotent.
+
+### 6. What happens if an agent fails?
+
+**Answer:** Many agents catch errors and return fallback text, so failure can still produce HTTP 200. Other errors propagate to Express. The generic error middleware path itself contains an undefined-variable defect.
+
+**Follow-up:** How would you improve it?
+
+**Follow-up answer:** Define typed errors and a consistent response contract, propagate request IDs and distinguish retryable dependency failures from invalid input. Credit handling should follow a defined successful operation rather than fallback text.
+
+### 7. What happens if an LLM API times out?
+
+**Answer:** There is no application-wide deadline, retry and cancellation policy across providers. SDK or HTTP errors reach the selected agent's error handling. I would not promise an automatic retry or fallback model.
+
+**Follow-up:** Would you retry every failure?
+
+**Follow-up answer:** No. Retry appropriate transient errors with backoff and jitter inside a bounded deadline. Do not blindly retry invalid credentials or input. Repeated operations must not duplicate charges or artifacts.
+
+### 8. Why did you not use Lambda?
+
+**Answer:** The backend is five persistent Express services with HTTP dependencies and file processing. Fargate deploys this container model directly. Lambda could suit selected event-driven jobs, but migrating the application requires evaluating duration, concurrency and database connections.
+
+**Follow-up:** Where could Lambda fit later?
+
+**Follow-up answer:** A bounded asynchronous cleanup or ingestion step could be a candidate after measuring the workload. Neither option is universally cheaper or better.
+
+### 9. Why ECS instead of EKS?
+
+**Answer:** These services need scheduling, networking, discovery and deployment. ECS provides that without operating Kubernetes. EKS would need a concrete ecosystem or organizational requirement to justify its complexity here.
+
+**Follow-up:** Does Fargate remove operations work?
+
+**Follow-up answer:** No. Image maintenance, task sizing, IAM, networking, health checks, deployment and dependency failures remain application responsibilities.
+
+### 10. What happens if an ECS container crashes?
+
+**Answer:** An ECS service attempts to maintain its configured desired count by replacing stopped tasks. That does not preserve an in-flight graph or temporary file. One replica can leave the service unavailable during replacement.
+
+**Follow-up:** Is replacement the same as high availability?
+
+**Follow-up answer:** No. HA needs healthy replicas across failure domains and resilient dependencies. The deployment instructions use one task per service and do not prove live HA.
+
+### 11. How does ALB know a container is healthy?
+
+**Answer:** Target-group health checks call a configured path and port. The guide uses `/`, but a root response does not prove MongoDB, Redis or providers work. The committed task definitions do not add container health checks.
+
+**Follow-up:** What would you add?
+
+**Follow-up answer:** Separate liveness from readiness. Readiness should check critical dependencies with bounded checks without making every optional provider outage disable the whole service.
+
+### 12. How are containers communicating?
+
+**Answer:** HTTP calls use Cloud Map names such as `novamind-auth.novamind.local` and service ports. ALB fronts the gateway for external API traffic. Security groups must permit intended internal traffic.
+
+**Follow-up:** Is discovery also authentication?
+
+**Follow-up answer:** No. DNS locates a service; it does not establish the caller's identity. Trusted identity headers and publicly reachable proxy paths require explicit authorization controls.
+
+### 13. Where are your secrets stored?
+
+**Answer:** Several task definitions reference Secrets Manager; local development uses environment variables. Auth's task definition also contains credential-bearing database URIs in plain environment entries, so secret handling is incomplete.
+
+**Follow-up:** How would you correct that?
+
+**Follow-up answer:** Move sensitive values to managed secrets, rotate exposed credentials and review history and build artifacts. Grant narrowly scoped access and never display the existing values during an interview.
+
+### 14. How do you prevent secrets from entering Docker images?
+
+**Answer:** The current setup does not provide sufficient assurance. Builds use `backend` as context, while ignore files sit inside service directories. Those nested files do not automatically filter the parent context; local environment files could be copied.
+
+**Follow-up:** What does a reliable fix include?
+
+**Follow-up answer:** An effective context-level or Dockerfile-specific ignore file, runtime secret injection and image inspection/scanning. `.gitignore` controls Git tracking, not Docker copying.
+
+### 15. What is the difference between execution role and task role?
+
+**Answer:** The execution role supports ECS operations such as pulling images, configured logging and injected secret retrieval. A task role grants permissions used by container code, such as Agent's S3 calls. Referenced roles do not establish their deployed permission scope.
+
+**Follow-up:** Can you claim least privilege?
+
+**Follow-up answer:** Only after inspecting actual policies and resource restrictions. A role reference proves configuration, not minimal permissions.
+
+### 16. What happens if Redis goes down?
+
+**Answer:** Protected gateway requests depend on Redis sessions, so access can fail while MongoDB and providers remain healthy. Agent memory and rate limiting also depend on Redis. A tested degraded mode is not implemented.
+
+**Follow-up:** Should authentication be bypassed?
+
+**Follow-up answer:** No. Return a clear temporary failure and improve dependency availability. Optional history caching can have a separately designed fallback; session validation must remain enforced.
+
+### 17. Does memory always expire after 24 hours and stay below 20 messages?
+
+**Answer:** No. Hydration sets a TTL, but later `SET` calls do not preserve it. Trimming removes only one item, so oversized hydrated history may remain oversized. Concurrent read-modify-write updates can lose messages.
+
+**Follow-up:** What would you change?
+
+**Follow-up answer:** Define the TTL policy, atomically append/trim, load bounded history and avoid duplicating the current prompt after it has already been persisted.
+
+### 18. How would this handle 10,000 users?
+
+**Answer:** First distinguish registered users from concurrent requests and define request mix and latency targets. There is no load-test evidence for this capacity. Measure gateway throughput, agent concurrency, database pools, Redis and provider quotas.
+
+**Follow-up:** What would you scale first?
+
+**Follow-up answer:** The measured bottleneck. Long jobs may need queues and concurrency control. More Agent tasks alone can exhaust provider quotas, and shared credit/state correctness must survive concurrency.
+
+### 19. How would you troubleshoot an ALB 502?
+
+**Answer:** Correlate the request timestamp with target health, gateway logs and ECS events. Determine whether the gateway restarted, closed a connection or returned an invalid response. Compare internal gateway behavior with ALB traffic.
+
+**Follow-up:** Does healthy target status rule out an application problem?
+
+**Follow-up answer:** No. A root health check can succeed while real requests fail. Diagnose the failing route and connection rather than treating health status as proof of end-to-end success.
+
+### 20. How does PDF RAG work here?
+
+**Answer:** Auto routes PDFs to parsing, 1,000-character chunks with 200 overlap, Gemini embeddings and a new Qdrant collection. The current question retrieves five chunks; Groq answers from that context. The temporary upload is removed.
+
+**Follow-up:** Can a later question retrieve the PDF without another upload?
+
+**Follow-up answer:** No persistent document-to-collection lookup is implemented. Conversation history may inform a text answer, but that is not fresh PDF retrieval.
+
+### 21. How do you prevent hallucination?
+
+**Answer:** RAG supplies context and instructions to answer from it, but cannot guarantee correctness. This project lacks verified citations and grounding evaluation. Say it aims to reduce unsupported answers, not eliminate hallucination.
+
+**Follow-up:** What if the document does not answer the question?
+
+**Follow-up answer:** The system should abstain. Reliable abstention needs retrieval relevance checks and evaluation of model behavior; it is not a verified guarantee today.
+
+### 22. How do you evaluate RAG quality?
+
+**Answer:** No evaluation suite is committed. I would label questions and supporting passages, including unanswerable examples, then measure retrieval coverage, faithfulness, correctness, latency and cost separately.
+
+**Follow-up:** Would increasing top-k always help?
+
+**Follow-up answer:** No. More chunks can introduce irrelevant context and cost. Compare chunking, top-k and reranking on the same evaluation set.
+
+### 23. Why several providers, and can startup use only one key?
+
+**Answer:** Providers supply different functions, but add credential, quota and failure dependencies. Clients are constructed eagerly, and SDK initialization can validate credentials before any request. Startup may therefore need more than the selected agent's key.
+
+**Follow-up:** Is this the optimal provider mix?
+
+**Follow-up answer:** No benchmark establishes that. Evaluate quality, latency, cost and operational requirements; consider lazy initialization and explicit configuration validation.
+
+### 24. Is generated code executed on the server?
+
+**Answer:** No. Coding returns Markdown or project files. React displays a read-only editor and can preview HTML/CSS/JavaScript in a sandboxed iframe. There is no server build/test execution service.
+
+**Follow-up:** Does a preview prove correctness?
+
+**Follow-up answer:** No. A future execution service would require isolation, resource limits and controlled networking, plus actual validation of dependencies and files.
+
+### 25. Are microservices completely data-isolated?
+
+**Answer:** Auth, Chat and Billing have their own models/connections, but Auth's admin controller directly connects to Chat and Billing databases. That couples administration to their schemas and credentials.
+
+**Follow-up:** How would you improve boundaries?
+
+**Follow-up answer:** Service-owned admin APIs or a reporting read model could replace direct cross-database reads, at the cost of additional coordination.
+
+### 26. Are payments and credits safe under retries?
+
+**Answer:** Not fully. Credit updates can race. Payment verification checks an HMAC but lacks requester ownership and idempotent completion, and saves payment state before updating Auth. Credit helpers also swallow some errors.
+
+**Follow-up:** What is the production design?
+
+**Follow-up answer:** Bind orders to users, process each payment once, use atomic balance operations and maintain a durable ledger with recovery/reconciliation across services.
+
+### 27. Is billing a recurring subscription system?
+
+**Answer:** It creates Razorpay orders and applies plan/credit updates. Expiry fields exist, but a complete recurring subscription lifecycle and consistent expiry enforcement do not. Describe it as payment-backed plan and credit management.
+
+**Follow-up:** What about insufficient credits?
+
+**Follow-up answer:** Provider work can happen before deduction, and credit-helper failures can be swallowed. Define reservation, settlement and refund behavior before production.
+
+### 28. What is the biggest limitation before production?
+
+**Answer:** Authorization and payment correctness come before throughput. Conversation operations lack ownership checks, and the public Auth proxy exposes routes that trust identity headers. Payment verification needs replay and ownership protection.
+
+**Follow-up:** What would you fix first?
+
+**Follow-up answer:** Close unintended public routes, enforce identity and resource ownership, make payments idempotent, then repair secret and session/logout handling before expanding access.
+
+### 29. Does CORS or the frontend admin route secure the API?
+
+**Answer:** No. CORS controls browser cross-origin access, and the frontend route controls navigation. Neither replaces server authentication and authorization. Credentialed cookies also require careful origin, cookie and CSRF design.
+
+**Follow-up:** What is the specific boundary problem here?
+
+**Follow-up answer:** Public Auth proxy routes can reach handlers that rely on trusted user headers. Every sensitive operation needs server-enforced authorization independently of the UI.
+
+### 30. What monitoring is implemented?
+
+**Answer:** Task definitions configure `awslogs`; the application has console logs and gateway request logging. Tracing, dashboards and alarm coverage are not established by the repository.
+
+**Follow-up:** What would you add first?
+
+**Follow-up answer:** Request IDs, route/agent latency and error metrics, dependency failures, task restarts, provider usage and billing reconciliation alerts. Remove sensitive token/session logging.
+
+### 31. What does CI/CD guarantee, and how do you roll back?
+
+**Answer:** Pushes to main build/push five images, force ECS deployments and publish the frontend. The workflow does not wait for ECS stability or run application tests, so completion does not prove runtime health.
+
+**Follow-up:** Is `latest` enough for rollback?
+
+**Follow-up answer:** No. Use immutable tags/digests and versioned task revisions, deploy a known-good revision and verify stability. Mutable tags weaken source-to-runtime traceability.
+
+### 32. Are containers stateless?
+
+**Answer:** Durable data mainly lives in MongoDB/S3, with Redis for sessions and cached state. In-memory graph execution and local temporary files still disappear on task termination.
+
+**Follow-up:** How would document jobs survive crashes?
+
+**Follow-up answer:** Durable authorized uploads, queued jobs, persisted status and idempotent workers. These are proposed improvements, not the current synchronous workflow.
+
+### 33. How would you reduce cost?
+
+**Answer:** Measure provider usage, repeated embeddings, task utilization, NAT traffic and storage growth. Reuse authorized indexes, apply retention, right-size tasks and set budgets. Do not invent monthly costs without billing/workload data.
+
+**Follow-up:** Would removing NAT always help?
+
+**Follow-up answer:** External SaaS calls still need outbound connectivity. Evaluate AWS endpoints separately from internet-bound traffic and consider availability as well as cost.
+
+### 34. How would you make it multi-region?
+
+**Answer:** Start with recovery-time and recovery-point objectives, then design regional stacks, failover, artifact replication and database recovery. Sessions, vector indexes and payment processing also require a plan. This is future work.
+
+**Follow-up:** Why not immediately use active-active?
+
+**Follow-up answer:** It adds write conflicts and duplicate-processing risks, especially for credits. Tested backup/restore or warm standby may meet the requirement with less complexity.
+
+### 35. What evidence would you bring to an interview?
+
+**Answer:** Show the graph, request controller, task definitions and workflow. Bring sanitized runtime evidence only if personally verified. Repository configuration does not prove uptime, scale or production success.
+
+**Follow-up:** How would you answer a behavioral outage question?
+
+**Follow-up answer:** Describe an incident only if it actually happened to you. Otherwise explain the investigation approach as a hypothetical scenario rather than personal history.
+
+## Troubleshooting Interview Scenarios
+
+These are investigation exercises, not claims of past incidents. Root causes remain candidates until evidence confirms them. Additional metrics or access logs may need enabling; do not imply they already exist.
+
+### 1. ECS task unhealthy
+
+- **Symptoms:** Failed health checks, unsettled deployment or intermittent failures.
+- **Investigation:** Inspect service events and target-health reasons; compare the target port/path with the listener and inspect startup.
+- **Logs/metrics:** ECS stopped reason, exit code, `/ecs/novamind-*` logs and ALB healthy/unhealthy target counts.
+- **Possible causes:** Wrong port, security-group rule, startup exception or unsuitable health-check timing. A successful root response can also hide dependency failures.
+- **Fix:** Correct the confirmed configuration/process issue and validate a real authenticated request.
+- **Prevention:** Meaningful readiness/container checks, measured startup allowance and CI service-stability checks.
+
+### 2. ALB 502
+
+- **Symptoms:** Frontend loads but API requests return 502.
+- **Investigation:** Determine whether ALB or an application proxy generated the error; correlate timestamps with gateway restarts, target health and upstream failures.
+- **Logs/metrics:** ALB/target 5xx metrics, access logs if enabled, gateway logs and ECS events.
+- **Possible causes:** Connection closed mid-request, gateway crash, malformed response or upstream proxy failure. Distinguish timeouts from other failures.
+- **Fix:** Repair the specific connection/process/proxy fault and retest the same route; change timeouts only with evidence.
+- **Prevention:** Graceful shutdown, request deadlines, stable deployments and route-level monitoring.
+
+### 3. ECR image pull failure
+
+- **Symptoms:** Replacement tasks cannot start and report image-pull errors.
+- **Investigation:** Verify the image URI/tag exists in the expected region, then inspect execution-role permissions and outbound connectivity.
+- **Logs/metrics:** Service events and stopped-task reason; CloudTrail authorization events where available. Application logs may not exist yet.
+- **Possible causes:** Missing image, incorrect URI, denied pull or unavailable network path.
+- **Fix:** Reference the correct image and repair the confirmed IAM/network issue, then redeploy.
+- **Prevention:** Immutable image references, pre-deployment image checks and validated role/network configuration.
+
+### 4. Redis connectivity problem
+
+- **Symptoms:** Session validation fails or agents error during memory/rate checks.
+- **Investigation:** Identify the client; verify endpoint, port, transport/authentication requirements and task-to-Redis reachability.
+- **Logs/metrics:** Gateway/Auth/Agent Redis errors and available ElastiCache connection, CPU, memory and failover signals.
+- **Possible causes:** Incorrect endpoint, blocked traffic, configuration mismatch, exhaustion or service interruption.
+- **Fix:** Restore the confirmed connectivity/configuration issue without bypassing authentication.
+- **Prevention:** Tested failover where required, bounded retries, capacity alerts and separate policies for sessions versus optional caching.
+
+### 5. Database connectivity problem
+
+- **Symptoms:** Login, history, payments or admin queries fail while the process may still answer `/`.
+- **Investigation:** Identify the service/database, check secret mapping without printing credentials, then inspect network access and connection pools.
+- **Logs/metrics:** Mongoose errors, database monitoring and ECS startup logs.
+- **Possible causes:** Invalid credentials, access restrictions, unavailable database or exhausted connections. Listening before database readiness can mask failure.
+- **Fix:** Repair the connection and confirm the affected read/write, not just a root response.
+- **Prevention:** Readiness, safe rotation, connection budgets and appropriate database availability/backups.
+
+### 6. CORS error
+
+- **Symptoms:** Browser blocks a response or subsequent requests lack a usable login session.
+- **Investigation:** Inspect URL, OPTIONS response, origin and cookie behavior; compare `VITE_SERVER_URL`, `FRONTEND_URL` and production cookie settings.
+- **Logs/metrics:** Browser Network panel, cookie rejection details and gateway logs; backend failures can also appear as CORS symptoms.
+- **Possible causes:** Wrong build-time URL, origin mismatch, HTTPS/cookie mismatch or failed preflight.
+- **Fix:** Correct the exact configuration and rebuild if Vite values changed; retest credentialed requests.
+- **Prevention:** Environment validation and a browser login-to-chat smoke test. Do not allow arbitrary origins to solve credentialed CORS.
+
+### 7. Secrets Manager permission error
+
+- **Symptoms:** Task initialization fails or a required runtime value is unavailable.
+- **Investigation:** Check secret reference, region and role; distinguish ECS injection through the execution role from code's task-role calls.
+- **Logs/metrics:** ECS initialization/stopped errors and relevant CloudTrail denied calls.
+- **Possible causes:** Wrong ARN, missing secret-read/applicable KMS permission or network failure.
+- **Fix:** Correct the reference or narrowly scoped permission/network issue and start replacement tasks.
+- **Prevention:** Validate mappings before deployment, rotate deliberately and keep secret values out of logs/plain environment entries.
+
+### 8. LLM timeout
+
+- **Symptoms:** Long spinner, failed response or fallback text.
+- **Investigation:** Identify agent/provider and request size; compare provider timing/quota errors with client and gateway behavior.
+- **Logs/metrics:** Agent exceptions, provider usage/errors and duration metrics if added.
+- **Possible causes:** Provider degradation, quota pressure, large input or unavailable outbound access.
+- **Fix:** Correct confirmed configuration/network issues; otherwise report a useful temporary failure and retry only appropriate transient errors within a deadline.
+- **Prevention:** Explicit time budgets, cancellation, concurrency limits, provider monitoring and asynchronous long jobs.
+
+### 9. Agent failure
+
+- **Symptoms:** Missing artifact, fallback text or errors while another agent works.
+- **Investigation:** Confirm router choice, then isolate model call, JSON parsing, generation, upload, persistence and credit update.
+- **Logs/metrics:** Agent/provider errors, Chat/Auth logs and S3 error details for upload failures.
+- **Possible causes:** Invalid model JSON, missing key, file-processing error, denied S3 write or an exception outside the catch block.
+- **Fix:** Repair the failed stage and report its outcome accurately; avoid retries that duplicate side effects.
+- **Prevention:** Structured-output validation, representative agent tests, typed errors, idempotency and corrected error middleware.
+
+### 10. RAG returns irrelevant results
+
+- **Symptoms:** Unrelated answer, missing document facts or unsupported PDF follow-up answer.
+- **Investigation:** Confirm Auto selected `pdfRag`; inspect extraction and retrieved chunks. Distinguish a new upload from text-only follow-up.
+- **Logs/metrics:** Sanitized retrieval diagnostics if added, labeled examples, Qdrant and embedding errors. Avoid logging private document text by default.
+- **Possible causes:** Scanned PDF without OCR, poor extraction/chunking, irrelevant top-five retrieval or no persistent collection lookup.
+- **Fix:** Correct extraction/retrieval; implement authorized document mapping for durable follow-ups. A prompt change alone cannot repair missing retrieval.
+- **Prevention:** Evaluation set, source/page metadata, relevance checks, abstention and index lifecycle management.
+
+### 11. Repeated container restarts in CloudWatch
+
+- **Symptoms:** Startup logs repeat and ECS repeatedly replaces tasks.
+- **Investigation:** Correlate streams with task IDs/deployments; check stopped reason, exit code, memory and initialization.
+- **Logs/metrics:** ECS events, stopped-task details, application logs and CPU/memory metrics.
+- **Possible causes:** Startup exception, missing eagerly validated model credentials, document-processing memory pressure, failed health checks or repeated deployments.
+- **Fix:** Resolve the observed exception/configuration problem, measured resource shortage or deployment issue; use a known-good revision when available.
+- **Prevention:** Startup validation, concurrency/memory limits, representative document tests and service-stability checks. More memory is not a universal fix.
+
+## Documentation Corrections and Evidence Boundaries
+
+Reuse the architecture poster with this guide's qualifications: a diagram or deployment instruction does not prove that every feature is enabled in AWS.
+
+- **Agent count:** Eight specialists plus the router; search continues into chat.
+- **Upload routing:** Explicit selection wins; file MIME routing applies in Auto.
+- **PDF follow-ups:** No persistent collection lookup or verified citations.
+- **Memory:** Hydration TTL is lost on later writes; trimming is not a strict cap after large hydration.
+- **Download expiry:** PDF/generated-image URLs use 1,440 seconds; PPT uses 86,400 seconds. Some user-facing labels disagree.
+- **Containers:** Single-stage builds; nested ignore files do not filter the parent build context.
+- **Secrets:** Managed references coexist with credential-bearing Auth environment entries.
+- **Payments:** Signature verification does not establish ownership, replay protection or atomic credit grants.
+- **Data boundaries:** Auth administration directly accesses Chat/Billing databases.
+- **Failure reporting:** Fallback text can return HTTP 200; generic error middleware also needs repair.
+- **Availability:** Subnet layout does not prove replica redundancy, autoscaling or live HA.
+- **Deployment:** CI forces updates without tests or a service-stability gate.
+- **Performance:** No benchmark establishes claimed latency, provider superiority or production capacity.
+
+### Evidence to revisit before an interview
+
+Use [README](README.md), the [existing poster](new-project-pic/novamind-aws-architecture-poster.png), [architecture notes](Architecture.md) and [deployment workflow](.github/workflows/deploy.yml) as orientation. The technical sections above link implementation files for the detailed claims. Treat source/configuration as evidence of implementation intent and behavior, and live observations as separate evidence of successful operation.
+
+### Questions to ask the interviewer
+
+- How does your team evaluate grounded answers and abstention?
+- Which failure and recovery objectives matter most for AI workloads?
+- How do you manage provider budgets, quotas and document retention?
+- What evidence is required before promoting an AI workflow to production?
+
+# 10-Minute Interview Revision Sheet
+
+**Project in one sentence:** NovaMind AI combines chat, coding, search, document and image tasks in a React/Node.js application, using specialized LangGraph workflows and an AWS container deployment design.
+
+**Problem solved:** One interface integrates several AI tasks with identity, history, artifacts and payment-backed credits.
+
+**Architecture in one sentence:** CloudFront/S3 serves React; ALB fronts the gateway; ECS services handle identity, chat, agents and billing; providers, MongoDB, Redis, Qdrant and S3 supply AI and data functions.
+
+- **Frontend:** React, Vite, Redux, Axios, Firebase sign-in and artifact rendering.
+- **Backend:** Gateway, Auth, Chat, Agent, Billing; ports 8000–8004.
+- **LangGraph:** Explicit selection → Auto MIME checks → text classification. Conditional edges; no durable checkpointer.
+- **Agents:** Chat, search, coding, PDF generation, PPT generation, image generation (`vision`), PDF RAG, image analysis.
+- **RAG:** PDF text → 1,000-character chunks/200 overlap → Gemini embeddings → new Qdrant collection → top five → Groq. No persistent follow-up lookup.
+- **AWS:** S3, CloudFront, ALB, ECS/Fargate, ECR, Cloud Map, ElastiCache, Secrets Manager, IAM, CloudWatch; verify live settings separately.
+- **Request:** UI → session-checked gateway → Agent → save prompt → graph/provider → persistence → JSON → UI.
+- **Deployment:** Main push → five images → ECR → ECS update → frontend build → S3 → CloudFront invalidation; no stability gate.
+- **Security:** Firebase verification and Redis cookie sessions; authorization, payments, secrets and logout need fixes.
+- **Networking:** Documented public ALB/private tasks, internal Cloud Map HTTP and outbound SaaS access; not proof of HA.
+- **Monitoring:** ECS/application logs; tracing and alarms not established.
+- **Scaling:** Independent scaling is possible; policies and tested capacity are not demonstrated.
+
+**Five design decisions:** (1) One UI with specialists. (2) LangGraph routing. (3) Five containerized services. (4) Redis sessions/rate counters/memory. (5) S3 artifacts and Qdrant retrieval.
+
+**Five strongest points:** (1) Traceable frontend-to-agent integration. (2) Eight specialist workflows. (3) Embedding/retrieval pipeline. (4) Artifact storage/rendering. (5) Docker, ECS and CI/CD configuration.
+
+**Five limitations:** (1) Authorization gaps. (2) Payment/credit concurrency and replay. (3) No persistent PDF retrieval. (4) Synchronous jobs without durable recovery. (5) Unverified HA/capacity and incomplete observability.
+
+**Five improvements:** (1) Fix authorization/secrets/sessions. (2) Make payments/credits atomic and recoverable. (3) Persist authorized document indexes and evaluate RAG. (4) Add durable jobs, deadlines and idempotency. (5) Add tests, immutable deployment, readiness, monitoring and measured scaling.
+
+**Likely questions:** What happens after Send? Why LangGraph and ECS? How does routing work? What if Redis/provider fails? Can PDF follow-ups retrieve the file? How do you evaluate RAG? Is billing retry-safe? What changes before production?
+
+**Speaking reminder:** Distinguish implemented code, deployment guidance and verified runtime behavior. Never invent a personal incident, benchmark or production guarantee.
