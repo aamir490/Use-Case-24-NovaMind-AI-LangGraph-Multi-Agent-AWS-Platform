@@ -44,13 +44,17 @@ To try the demo, sign in with Google, choose an agent or use automatic routing, 
 
 [View full-size architecture poster](new-project-pic/novamind-aws-architecture-poster.png)
 
-NovaMind AI separates the browser interface, backend services and AI workflows into distinct parts. Amazon S3 stores the compiled React frontend, and CloudFront delivers it to users. The browser sends API requests to the backend through an Application Load Balancer, which forwards them to the Express Gateway. The Gateway validates sessions for protected routes and directs each request to the appropriate service.
+The diagram shows how NovaMind AI takes a user's request, chooses the right AI tool, and sends back a result. Think of it in three parts: **the website you use, the backend that handles your request, and the AI tools that do the work.**
 
-The backend consists of **five services running on ECS Fargate**: Gateway, Auth, Chat, Agent and Billing. Each service has a focused responsibility, from verifying Firebase identity and saving conversations to processing payments. In the documented deployment, backend tasks run in private subnets, discover one another through AWS Cloud Map, and reach external providers through a NAT Gateway.
+**First, you open the website and sign in.** AWS S3 stores the website files, and CloudFront delivers them to your browser. Google sign-in uses Firebase to verify your identity. The backend then creates a session so you can continue using the app without signing in for every request.
 
-The **Agent service is the AI processing layer**. Its LangGraph router selects one of eight specialist workflows using the chosen agent, uploaded file or prompt. Those workflows call external models and tools for tasks such as web search, code generation, image analysis and PDF retrieval. All eight agents run inside this service; they share orchestration code and return answers or generated artifacts through the same API.
+**Next, you send a message or upload a file.** Your request passes through the Load Balancer to the Gateway, the backend's entry point. The Gateway checks your session and forwards the request to the right service. Auth manages your account and credits, Chat saves conversations, Agent handles AI tasks, and Billing handles payments.
 
-Storage is divided by purpose: **MongoDB Atlas** persists application data, **Redis** supports sessions and conversation memory, **Qdrant** stores PDF embeddings, and **S3** holds generated documents and images. IAM roles and Secrets Manager support permissions and runtime credentials, while CloudWatch collects container logs. GitHub Actions builds and deploys the backend containers and frontend assets, connecting the application architecture to its delivery pipeline.
+**For an AI task, the Agent service chooses a specialist.** For example, if you upload a PDF and ask a question, the PDF RAG workflow reads the document, finds relevant passages, and gives those passages to an AI model to help it answer. A coding request uses the Coding agent, while an image-generation request uses the Vision agent. These eight specialists all run inside the same Agent service.
+
+**Finally, the result comes back to your browser.** Conversations are saved in MongoDB. Generated files, such as PDFs and presentations, are stored in S3 and returned as download links. Redis helps remember your session and recent messages, while Qdrant helps find relevant text in uploaded PDFs.
+
+The other AWS components support this process: **ECS Fargate runs the backend services, CloudWatch collects their logs, and IAM and Secrets Manager control access and supply credentials.** GitHub Actions publishes code updates to AWS. The numbered sections below explain each part of the diagram in more detail.
 
 **Numbered architecture walkthrough:**
 
