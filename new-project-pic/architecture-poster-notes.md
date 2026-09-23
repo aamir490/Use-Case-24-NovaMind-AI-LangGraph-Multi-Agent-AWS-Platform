@@ -7,3 +7,5 @@ Generation brief: Match the reference's landscape ten-panel layout, navy NovaMin
 Correction brief: Preserve the poster design. Replace sequential microservice arrows with independent Gateway branches to Auth, Chat, Agent and Billing. API requests originate at the browser, not S3. Avoid asserting HTTPS on the configurable API endpoint. Label GitHub Actions Build & deploy rather than Build & test.
 
 The poster's marks are generated illustrations. For the diagram embedding original AWS asset files, use the separately retained `novamind-aws-architecture.svg` and its renderer, `scripts/render_architecture.py`. That renderer does not regenerate this poster.
+
+Final arrow correction (built-in image-generation edit): preserve the full poster; connect the browser-to-ALB path as a continuous elbow with an arrowhead only at the ALB; remove the API HTTPS label; remove the arrowhead pointing back into Gateway from the routing bus, retaining four outward branches to Auth, Chat, Agent and Billing.

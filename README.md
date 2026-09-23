@@ -48,7 +48,7 @@ The diagram shows how NovaMind AI takes a user's request, chooses the right AI t
 
 **First, you open the website and sign in.** AWS S3 stores the website files, and CloudFront delivers them to your browser. Google sign-in uses Firebase to verify your identity. The backend then creates a session so you can continue using the app without signing in for every request.
 
-**Next, you send a message or upload a file.** Your request passes through the Load Balancer to the Gateway, the backend's entry point. The Gateway checks your session and forwards the request to the right service. Auth manages your account and credits, Chat saves conversations, Agent handles AI tasks, and Billing handles payments.
+**Next, you send a message or upload a file.** In the AWS deployment, your request passes through the Load Balancer to the Gateway, the backend's entry point. During local development, your browser connects directly to the Gateway at `localhost:8000`. The Gateway checks your session for protected requests and forwards them to the right service. Auth manages your account and credits, Chat saves conversations, Agent handles AI tasks, and Billing handles payments.
 
 **For an AI task, the Agent service chooses a specialist.** For example, if you upload a PDF and ask a question, the PDF RAG workflow reads the document, finds relevant passages, and gives those passages to an AI model to help it answer. A coding request uses the Coding agent, while an image-generation request uses the Vision agent. These eight specialists all run inside the same Agent service.
 
@@ -241,7 +241,8 @@ Dependency versions are maintained in [frontend/package.json](frontend/package.j
 - Node.js 22 and npm.
 - Docker Desktop with Docker Compose for local Redis.
 - MongoDB connection strings and a Firebase project with Google sign-in enabled.
-- Provider credentials for the features you intend to use: Groq, Gemini, OpenRouter, Tavily, Stability AI and Qdrant.
+- Groq, Gemini and OpenRouter credentials for the Agent service's model clients. These clients are created when the service starts, so do not assume their keys are optional when using only one agent.
+- Tavily credentials for web search, Stability AI credentials for image generation, and a Qdrant URL/API key for PDF question answering.
 - An S3 bucket and AWS credentials for generated files; Razorpay keys for billing.
 
 ### 2. Configure environment files
@@ -268,6 +269,7 @@ BILLING_SERVICE=http://localhost:8004
 
 Additional setup beyond the example files:
 
+- **Agent startup:** set `GROQ_API_KEY`, `GOOGLE_API_KEY` and `OPENROUTER_API_KEY` before starting the Agent service. Groq, Gemini and OpenRouter clients validate their API keys during initialization; missing keys can stop the service before it accepts requests.
 - **Firebase:** place the service account at `backend/services/auth/serviceAccountKey.json`, or supply its JSON through `FIREBASE_SERVICE_ACCOUNT`. Match the browser Firebase project configuration in [frontend/utils/firebase.js](frontend/utils/firebase.js) to your project.
 - **Image generation:** add `STABILITY_API_KEY` to the Agent environment; it is not included in the current example file.
 - **Admin data:** add `BILLING_MONGODB_URI` and `CHAT_MONGODB_URI` to Auth for the cross-service admin views.
@@ -337,6 +339,7 @@ npm --prefix frontend run build
 These are frontend checks. The repository does not currently provide a backend automated test suite.
 
 - **Redis connection fails:** confirm Docker is running and the local Redis port is 6379.
+- **Agent exits with a missing-key error:** check its `.env` file for the model credentials listed above and start it from `backend/services/agent/` so the environment file is loaded.
 - **Login succeeds but API calls fail:** confirm `VITE_SERVER_URL`, Gateway `FRONTEND_URL`, and local `NODE_ENV` settings agree. Restart Vite after changing frontend environment values.
 - **Provider or artifact calls fail:** check the relevant API key, provider access, S3 bucket region and AWS permissions.
 - **Admin data fails to load:** check both admin database connection strings in Auth.
