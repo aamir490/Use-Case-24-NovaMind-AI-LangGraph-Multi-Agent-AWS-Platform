@@ -8,7 +8,7 @@
 
 ## Module 21 Visual — Interview Storytelling Mental Model
 
-![NovaMind AI — Roles, Responsibilities and Project Storytelling](../images/21-roles-responsibilities-project-storytelling.png)
+![NovaMind AI — Roles, Responsibilities and Project Storytelling](images/21-roles-responsibilities-project-storytelling.png)
 
 ---
 
