@@ -8,7 +8,7 @@
 
 ## Module 09 Visual Architecture
 
-![NovaMind AI — PDF RAG, Qdrant and Document Lifecycle](../images/09-novamind-pdf-rag-qdrant-document-lifecycle.png)
+![NovaMind AI — PDF RAG, Qdrant and Document Lifecycle](images\09-novamind-pdf-rag-qdrant-document-lifecycle.png)
 
 > Place the image at: `learning/images/09-novamind-pdf-rag-qdrant-document-lifecycle.png`
 
