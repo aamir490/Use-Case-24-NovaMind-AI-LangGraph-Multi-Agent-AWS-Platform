@@ -8,7 +8,7 @@
 
 ## Module 14 Visual Architecture
 
-![NovaMind AI — Docker, ECR, ECS Fargate and AWS Architecture](../images/14-docker-ecr-ecs-fargate-aws-architecture.png)
+![NovaMind AI — Docker, ECR, ECS Fargate and AWS Architecture](images/14-docker-ecr-ecs-fargate-aws-architecture.png)
 
 > Use the already-generated image at: `learning/images/14-docker-ecr-ecs-fargate-aws-architecture.png`
 
