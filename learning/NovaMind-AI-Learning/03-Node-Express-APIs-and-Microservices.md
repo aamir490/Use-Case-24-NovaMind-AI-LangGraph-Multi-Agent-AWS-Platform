@@ -8,7 +8,7 @@
 
 ## Module 03 Architecture Image
 
-![NovaMind AI — Node/Express APIs and Microservices Architecture](images\03-node-express-microservices-architecture.png)
+![NovaMind AI — Node/Express APIs and Microservices Architecture](images/03-node-express-microservices-architecture.png)
 
 > Place the image at: `learning/images/node-express-microservices-architecture.png`
 

@@ -8,7 +8,7 @@
 
 ## Module 05 Visual Mental Model
 
-![NovaMind AI — Agent, Agentic AI and Multi-Agent Fundamentals](images\05-agent-agentic-ai-multi-agent-fundamentals.png)
+![NovaMind AI — Agent, Agentic AI and Multi-Agent Fundamentals](images/05-agent-agentic-ai-multi-agent-fundamentals.png)
 
 > Place the image at: `learning/images/05-agent-agentic-ai-multi-agent-fundamentals.png`
 

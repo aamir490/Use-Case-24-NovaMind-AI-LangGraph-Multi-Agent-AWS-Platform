@@ -8,7 +8,7 @@
 
 ## Module 06 Visual Mental Model
 
-![NovaMind AI — LangGraph State, Nodes, Edges and Routing](images\06-langgraph-state-nodes-edges-routing.png)
+![NovaMind AI — LangGraph State, Nodes, Edges and Routing](images/06-langgraph-state-nodes-edges-routing.png)
 
 > Place the image at: `learning/images/06-langgraph-state-nodes-edges-routing.png`
 

@@ -8,7 +8,7 @@
 
 ## Module 04 Visual Mental Model
 
-![NovaMind AI — Generative AI, LLMs, Prompts & Model Providers](images\04-generative-ai-llms-model-providers.png)
+![NovaMind AI — Generative AI, LLMs, Prompts & Model Providers](images/04-generative-ai-llms-model-providers.png)
 
 > Place the image at: `learning/images/04-generative-ai-llms-model-providers.png`
 

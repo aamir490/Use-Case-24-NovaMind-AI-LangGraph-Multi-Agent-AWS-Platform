@@ -8,7 +8,7 @@
 
 ## Module 07 Visual Architecture
 
-![NovaMind AI — Specialist AI Workflows and Tool Integration](images\07-specialist-ai-workflows-tool-integration.png)
+![NovaMind AI — Specialist AI Workflows and Tool Integration](images/07-specialist-ai-workflows-tool-integration.png)
 
 > Place the image at: `learning/images/07-specialist-ai-workflows-tool-integration.png`
 

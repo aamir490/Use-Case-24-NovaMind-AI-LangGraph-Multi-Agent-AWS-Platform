@@ -8,7 +8,7 @@
 
 ## Module 08 Visual Architecture
 
-![NovaMind AI — RAG Foundations, Embeddings and Vector Search](images\08-rag-embeddings-vector-search.png)
+![NovaMind AI — RAG Foundations, Embeddings and Vector Search](images/08-rag-embeddings-vector-search.png)
 
 > Place the image at: `learning/images/08-rag-embeddings-vector-search.png`
 

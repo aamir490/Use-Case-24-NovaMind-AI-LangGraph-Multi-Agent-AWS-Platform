@@ -8,7 +8,7 @@
 
 ## Architecture Image
 
-![NovaMind AI — Complete High-Level Architecture](images\02-novamind-high-level-architecture.png)
+![NovaMind AI — Complete High-Level Architecture](images/02-novamind-high-level-architecture.png)
 
 > Image location in the project: `learning/images/02-novamind-high-level-architecture.png`
 

@@ -51,7 +51,7 @@ The important idea is that NovaMind is **not just one LLM call**. It combines no
 
 The diagram below gives a high-level mental model of NovaMind AI before studying each component in depth.
 
-![NovaMind-AI-Project-Foundation-&-Mental-Model](images\01-project-foundation-mental-model.png.png)
+![NovaMind-AI-Project-Foundation-&-Mental-Model](images/01-project-foundation-mental-model.png.png)
 
 
 ### How to Read This Diagram
