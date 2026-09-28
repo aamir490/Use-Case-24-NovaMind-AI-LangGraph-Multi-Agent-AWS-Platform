@@ -10,6 +10,10 @@
 
 ![NovaMind AI — State, Memory, MongoDB, Redis and Conversation Lifecycle](images/10-state-memory-mongodb-redis-conversation-lifecycle.png)
 
+-
+
+![NovaMind AI — State, Memory, MongoDB, Redis and Conversation Lifecycle](images/10-state-memory-mongodb-redis-conversation-lifecycle-pic2.png)
+
 > Place the image at: `learning/images/10-state-memory-mongodb-redis-conversation-lifecycle.png`
 
 ---
